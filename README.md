@@ -1,3 +1,3 @@
 # MDP
 ## Group 6
-Used Encoder,Gyroscope,Servometer,Uart,Motor
+Uses Encoder,Gyroscope,Servometer,Uart,Motor to perform required tasks
