@@ -48,7 +48,9 @@ int Target_Distance;  // 80 cm in meters (0.8 meters)
 #define PI 3.14159265359
 float distanceTraveled = 0.0;  // Total distance traveled in meters
 float delta_time_sec=0;
-int error_angle=0,calibrate,flagDone=0,flagReceived=0,count=2;
+float gyro_offset = 0.0;
+float current_gyro_reading = 0.0;
+int error_angle=0,calibrate,flagDone=0,flagReceived=0,count=0;
 uint32_t start_time, end_time;
 
 //#define Debug
@@ -205,6 +207,13 @@ void delay_us(uint16_t us)
 	__HAL_TIM_SET_COUNTER(&htim6,0);
 	while(__HAL_TIM_GET_COUNTER(&htim6)<us);
 
+}
+void reset_gyro_at_rest() {
+    gyro_offset =accel.z;  // Store the current reading as offset
+}
+
+float get_corrected_gyro() {
+    return accel.z - gyro_offset;  // Subtract the offset from new readings
 }
 float high_pass_filter(float raw_gyro, float alpha)
 {
@@ -1169,36 +1178,31 @@ void Move_Right(){
 	set_servo_angle(Right);
 	osDelay(1000);
 	PID_Control(10,1);
-
 }
+
 void Motor_Stop()
 {
 	degree=0;
-	set_servo_angle(Center);
-	//distanceTraveled=0;
+	distanceTraveled=0;
     pwmValL = 0;
     pwmValR = 0;
     __HAL_TIM_SetCompare(&htim8, TIM_CHANNEL_1, pwmValL); // Stop left motor
     __HAL_TIM_SetCompare(&htim8, TIM_CHANNEL_2, pwmValR); // Stop right motor
+	set_servo_angle(Center);
+	osDelay(4000);
+	reset_gyro_at_rest();
     count++;
 }
+
 void Move_Straight(){
     // Set PWM duty cycle for both motors
 	Set_Motor_Direction(1);
 	PID_Control(5,5);
-//	pwmValL=2000;
-//	pwmValR=2000;
-//    __HAL_TIM_SetCompare(&htim8, TIM_CHANNEL_1, pwmValL);
-//    __HAL_TIM_SetCompare(&htim8, TIM_CHANNEL_2, pwmValR);
 }
 void Move_Backwards(){
 	Set_Motor_Direction(0);
     // Set PWM duty cycle for both motors
 	PID_Control(5,5);
-//	pwmValL=2000;
-//	pwmValR=2000;
-//	__HAL_TIM_SetCompare(&htim8, TIM_CHANNEL_1, pwmValL);
-//    __HAL_TIM_SetCompare(&htim8, TIM_CHANNEL_2, pwmValR);
 
 }
 void Calibrate()
@@ -1284,9 +1288,9 @@ void StartOledTask(void *argument)
 //
 		snprintf(text, sizeof(text), "EA:%d", error_angle);
 		OLED_ShowString(10, 40, text);
-		ICM20948_readGyroscope_all(&hi2c1, 0, GYRO_SENS, &accel);
 //		  snprintf(text, sizeof(text), "X:%d", flagReceived);
-//		  OLED_ShowString(10, 50, text);
+		snprintf(text, sizeof(text), "Distance:%d", g_distanceUS);
+		  OLED_ShowString(10, 20, text);
 		//		  snprintf(text, sizeof(text), "X:%d", flagReceived);
 		//		  OLED_ShowString(10, 50, text);
 //		  snprintf(text, sizeof(text), "PWM:%c", aRxBuffer[0]);
@@ -1339,17 +1343,15 @@ void StartOledTask(void *argument)
 void StartUltraSonic(void *argument)
 {
   /* USER CODE BEGIN StartUltraSonic */
-
+	HAL_GPIO_WritePin(GPIOE, TRIG_Pin,GPIO_PIN_RESET);
   /* Infinite loop */
   for(;;)
   {
-	  	HAL_GPIO_WritePin(GPIOE, TRIG_Pin,GPIO_PIN_RESET);
 	    HAL_GPIO_WritePin(GPIOE, TRIG_Pin,GPIO_PIN_SET);
 	    delay_us(10);
 	    HAL_GPIO_WritePin(GPIOE, TRIG_Pin,GPIO_PIN_RESET);
-	    osDelay(10);
 	    //g_distanceUS = (tc2 > tc1 ? (tc2 - tc1) : (65535 - tc1 + tc2)) * 0.034 / 2; //echo/1000000.0f *343.0f/2.0f *100.0f equivalent
-    osDelay(200);
+    osDelay(10);
   }
   /* USER CODE END StartUltraSonic */
 }
@@ -1377,12 +1379,13 @@ void StartServoTask(void *argument)
   {
 //	  if(aRxBuffer[0]=='W'||aRxBuffer[0]=='S')
 //	  {
+		ICM20948_readGyroscope_all(&hi2c1, 0, GYRO_SENS, &accel);
 		end_time = HAL_GetTick();
 		delta_time_sec= (end_time - start_time) / 1000.0f;
 		 float filtered_gyro_value = high_pass_filter(accel.z, alpha);
 		  degree+=filtered_gyro_value * delta_time_sec;
 		  error_angle=Center-(int)degree;
-		  if(count==0)
+		  if(count==1)
 		  {
 			  if(error_angle>(Center+.2)) //(error_angle>(Center+.5))
 			  {
@@ -1399,14 +1402,14 @@ void StartServoTask(void *argument)
 				  set_servo_angle(Center);
 			  }
 		  }
-		  else if(count==1)
+		  else if(count==2)
 		  {
-			  if(error_angle<(Center-.5)) //(error_angle>(Center+.5))
+			  if(error_angle<(Center-.2)) //(error_angle>(Center+.5))
 			  {
 				  //set_servo_pwm(146);//turn slght left 146
 				  set_servo_angle(Slight_Left);
 			  }
-			  else if(error_angle>(Center+.5))
+			  else if(error_angle>(Center+.2))
 			  {
 				  //set_servo_pwm(160); //turn slight right 160
 				  set_servo_angle(Slight_Right);
@@ -1417,7 +1420,7 @@ void StartServoTask(void *argument)
 			  }
 		  }
 		  start_time = HAL_GetTick();
-		    osDelay(150);
+		    osDelay(100);
 	  }
 //	  else{
 //
@@ -1459,11 +1462,23 @@ void StartMotorTask(void *argument)
 //	  {
 //		  Move_Right(40);
 //	  } //70 is for left //140 for right
-	  if(count==2)
-	  {
-		  if(error_angle<175) // Move left 135 for 90 degree //180 for 180 degree 175 works too // do increments of 45 for each 90 degree
+	  if(count==4)
+	  {//for reverse left / right swap the function call and its fine and -5
+		  if(error_angle<135) // Move left 135 for 90 degree //180 for 180 degree 175 works too
+			  // do increments of 45 for each 90 degree
 		  {
 			  Move_Right();
+		  }
+		  		else{
+		  			Motor_Stop();
+		  		}
+	  }
+	  if(count==0)
+	  {//for reverse left / right swap the function call and its fine
+		  if(error_angle>55) // Move left 135 for 90 degree //180 for 180 degree 175 works too
+			  // do increments of 45 for each 90 degree
+		  {
+			  Move_Left();
 		  }
 		  		else{
 		  			Motor_Stop();
@@ -1472,7 +1487,7 @@ void StartMotorTask(void *argument)
 
 //	  if(count==2)
 //	  {
-//		  if(error_angle>55) // Move left 55 for 90 degree
+//		  if(error_angle>55) // Move left 55 for 90 degree //correct one forward
 //		  {
 //			  Move_Left();
 //		  }
@@ -1483,11 +1498,11 @@ void StartMotorTask(void *argument)
 
 	  if(distanceTraveled<Target_Distance)// Do not touch
 	  {
-		  if(count==0)
+		  if(count==1)
 		  {
 			  Move_Straight();
 		  }
-		  if(count==1)
+		  if(count==5)
 		  {
 			  Move_Backwards();
 		  }
@@ -1548,6 +1563,10 @@ void StartMotorTask(void *argument)
 //				flagReceived=0;
 //			}
 ////	}
+//	  	if(g_distanceUS<20)
+//	  	{
+//	  		Motor_Stop();
+//	  	}
 		else{
 			Motor_Stop();
 		}
