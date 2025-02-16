@@ -1167,12 +1167,14 @@ void IR_Right_Read() {
 }
 
 void Move_Left(){
+	Set_Motor_Direction(1);
 	set_servo_angle(Left);
 	osDelay(1000);
 	PID_Control(1,10);
 
 }
 void Move_Right(){
+	Set_Motor_Direction(1);
 	set_servo_angle(Right);
 	osDelay(1000);
 	PID_Control(10,1);
@@ -1375,13 +1377,15 @@ void StartServoTask(void *argument)
   /* Infinite loop */
   for(;;)
   {
+//	  if(aRxBuffer[0]=='W'||aRxBuffer[0]=='S')
+//	  {
 		ICM20948_readGyroscope_all(&hi2c1, 0, GYRO_SENS, &accel);
 		end_time = HAL_GetTick();
 		delta_time_sec= (end_time - start_time) / 1000.0f;
 		 float filtered_gyro_value = high_pass_filter(accel.z, alpha);
 		  degree+=filtered_gyro_value * delta_time_sec;
 		  error_angle=Center-(int)degree;
-		  if(aRxBuffer[0]=='W')
+		  if(count==1)
 		  {
 			  if(error_angle>(Center+.2)) //(error_angle>(Center+.5))
 			  {
@@ -1398,7 +1402,7 @@ void StartServoTask(void *argument)
 				  set_servo_angle(Center);
 			  }
 		  }
-		  else if(aRxBuffer[0]=='S')
+		  else if(count==2)
 		  {
 			  if(error_angle<(Center-.2)) //(error_angle>(Center+.5))
 			  {
@@ -1445,7 +1449,7 @@ void StartMotorTask(void *argument)
 	while(HAL_GPIO_ReadPin(GPIOD, GPIO_PIN_8)==1);
 	//while(calibrate==0);
 	set_servo_angle(Center);
-	//Target_Distance=200;
+	Target_Distance=200;
   /* Infinite loop */
   for(;;)
   {
@@ -1458,30 +1462,28 @@ void StartMotorTask(void *argument)
 //	  {
 //		  Move_Right(40);
 //	  } //70 is for left //140 for right
-//	  if(count==4)
-//	  {//for reverse left / right swap the function call and its fine and -5
-//		  if(error_angle<135) // Move left 135 for 90 degree //180 for 180 degree 175 works too
-//			  // do increments of 45 for each 90 degree
-//		  {
-//			Set_Motor_Direction(1);
-//			  Move_Right();
-//		  }
-//		  		else{
-//		  			Motor_Stop();
-//		  		}
-//	  }
-//	  if(count==0)
-//	  {//for reverse left / right swap the function call and its fine
-//		  if(error_angle>55) // Move left 135 for 90 degree //180 for 180 degree 175 works too
-//			  // do increments of 45 for each 90 degree
-//		  {
-//
-//			  Move_Left();
-//		  }
-//		  		else{
-//		  			Motor_Stop();
-//		  		}
-//	  }
+	  if(count==4)
+	  {//for reverse left / right swap the function call and its fine and -5
+		  if(error_angle<135) // Move left 135 for 90 degree //180 for 180 degree 175 works too
+			  // do increments of 45 for each 90 degree
+		  {
+			  Move_Right();
+		  }
+		  		else{
+		  			Motor_Stop();
+		  		}
+	  }
+	  if(count==0)
+	  {//for reverse left / right swap the function call and its fine
+		  if(error_angle>55) // Move left 135 for 90 degree //180 for 180 degree 175 works too
+			  // do increments of 45 for each 90 degree
+		  {
+			  Move_Left();
+		  }
+		  		else{
+		  			Motor_Stop();
+		  		}
+	  }
 
 //	  if(count==2)
 //	  {
@@ -1494,88 +1496,88 @@ void StartMotorTask(void *argument)
 //		  		}
 //	  }
 
-//	  if(distanceTraveled<Target_Distance)// Do not touch
-//	  {
-//		  if(count==1)
-//		  {
-//			  Move_Straight();
-//		  }
-//		  if(count==5)
-//		  {
-//			  Move_Backwards();
-//		  }
-//
-//		}
-	  if(flagReceived==1&&flagDone!=1){
-		  Target_Distance=atoi(aRxBuffer+1);
-			if(aRxBuffer[0]=='W'){
-				if(distanceTraveled < Target_Distance){
-				  Move_Straight();
-				}
-				else{
-				flagDone=1;
-				}
-			}
-			else if(aRxBuffer[0]=='D'){
-				if(aRxBuffer[1]=='1'){
-					if(error_angle<135){
-						Set_Motor_Direction(1);
-						Move_Right();
-					}
-				}
-			else if(aRxBuffer[1]=='0'){
-				if(error_angle>55){
-						Set_Motor_Direction(0);
-						Move_Right();
-					}
-				}
-				else{
-					flagDone=1;
-				}
-			}
-			else if(aRxBuffer[0]=='A'){
-				if(aRxBuffer[1]=='1'){
-					if(error_angle>55){
-						Set_Motor_Direction(1);
-						Move_Left();
-					}
-				}
-				else if(aRxBuffer[1]=='0'){
-					if(error_angle<135){
-						Set_Motor_Direction(0);
-						Move_Left();
-					}
-				}
-				else{
-					flagDone=1;
-				}
-			}
-			else if(aRxBuffer[0]=='S')
-			{
-				if(distanceTraveled < Target_Distance)
-				{
-					Move_Backwards();
-				}
-				else{
-					flagDone=1;
-				}
-			}
-			else{
-				flagReceived=0;
-			}
+	  if(distanceTraveled<Target_Distance)// Do not touch
+	  {
+		  if(count==1)
+		  {
+			  Move_Straight();
+		  }
+		  if(count==5)
+		  {
+			  Move_Backwards();
+		  }
+
 		}
-		else if(flagDone==1)
-		{
-			Motor_Stop();
-			HAL_UART_Transmit(&huart3,(uint8_t *)"D",1,0xFFFF);
-			flagReceived=0;
-			flagDone = 0;
-		}
-	    osDelay(50); // Delay to control update frequency
+//	  if(flagReceived==1)
+//		{
+//		  Target_Distance=atoi(aRxBuffer+1);
+//			if(aRxBuffer[0]=='W')
+//			{
+//				if(distanceTraveled < Target_Distance)
+//				{
+//				  Move_Straight();
+//				}
+//				else{
+//				Motor_Stop();
+//				flagDone=1;
+//				flagReceived=0;
+//				}
+//			}
+//			else if(aRxBuffer[0]=='D')
+//			{
+//				if(distanceTraveled < Target_Distance)
+//				{
+//					Move_Right();
+//				}
+//				else{
+//					Motor_Stop();
+//					flagDone=1;
+//					flagReceived=0;
+//				}
+//			}
+//			else if(aRxBuffer[0]=='A')
+//			{
+//				if(distanceTraveled < Target_Distance)
+//				{
+//					Move_Left();
+//				}
+//				else{
+//					Motor_Stop();
+//					flagDone=1;
+//					flagReceived=0;
+//				}
+//			}
+//			else if(aRxBuffer[0]=='S')
+//			{
+//				if(distanceTraveled < Target_Distance)
+//				{
+//					Move_Backwards();
+//				}
+//				else{
+//					Motor_Stop();
+//					flagDone=1;
+//					flagReceived=0;
+//				}
+//			}
+//			else{
+//				flagReceived=0;
+//			}
+////	}
 //	  	if(g_distanceUS<20)
 //	  	{
 //	  		Motor_Stop();
 //	  	}
+		else{
+			Motor_Stop();
+		}
+//	else if(flagDone==1)
+//	{
+//		flagReceived=0;
+//		flagDone = 0;
+//	}
+
+
+	    osDelay(50); // Delay to control update frequency
   	  }
 	    /*
 	  Set_Motor_Direction(0);
