@@ -41,7 +41,7 @@
 
 #define MAX_SERVO_Angle 180
 #define MIN_SERVO_Angle 0
-static float filtered_gyro = 0,last_raw=0;
+static float filtered_gyro = 0,last_raw=0,reset_hpf=0;
 float alpha = 0.95;
 #define WHEEL_DIAMETER 6.5    // 6.5 cm (in meters)
 int Target_Distance;  // 80 cm in meters (0.8 meters)
@@ -223,10 +223,15 @@ float high_pass_filter(float raw_gyro, float alpha)
 //		//last_raw=raw_gyro;
 //	}
 //	else{
+//	if(reset_hpf){
+//		filtered_gyro=0;
+//		last_raw=raw_gyro;
+//		reset_hpf=0;
+//		return 0;
+//	}
 		filtered_gyro = alpha *(filtered_gyro +raw_gyro-last_raw);
 	    last_raw=raw_gyro;
 //	}
-
 
     return filtered_gyro;
 }
@@ -1167,12 +1172,17 @@ void IR_Right_Read() {
 }
 
 void Move_Left(){
+	filtered_gyro=0;
+	last_raw=0;
 	set_servo_angle(Left);
 	osDelay(1000);
 	PID_Control(1,10);
 
 }
 void Move_Right(){
+	filtered_gyro=0;
+	last_raw=0;
+	reset_hpf=0;
 	set_servo_angle(Right);
 	osDelay(1000);
 	PID_Control(10,1);
@@ -1187,17 +1197,23 @@ void Motor_Stop()
     __HAL_TIM_SetCompare(&htim8, TIM_CHANNEL_1, pwmValL); // Stop left motor
     __HAL_TIM_SetCompare(&htim8, TIM_CHANNEL_2, pwmValR); // Stop right motor
 	set_servo_angle(Center);
-	osDelay(4000);
-	reset_gyro_at_rest();
+	osDelay(1000);
+	//reset_gyro_at_rest();
     count++;
 }
 
 void Move_Straight(){
+	degree=0;
+	filtered_gyro=0;
+	last_raw=0;
     // Set PWM duty cycle for both motors
 	Set_Motor_Direction(1);
 	PID_Control(5,5);
 }
 void Move_Backwards(){
+	degree=0;
+	filtered_gyro=0;
+	last_raw=0;
 	Set_Motor_Direction(0);
     // Set PWM duty cycle for both motors
 	PID_Control(5,5);
@@ -1379,7 +1395,7 @@ void StartServoTask(void *argument)
 		end_time = HAL_GetTick();
 		delta_time_sec= (end_time - start_time) / 1000.0f;
 		 float filtered_gyro_value = high_pass_filter(accel.z, alpha);
-		  degree+=filtered_gyro_value * delta_time_sec;
+		  degree+=filtered_gyro_value * delta_time_sec; //accel.z
 		  error_angle=Center-(int)degree;
 		  if(aRxBuffer[0]=='W')
 		  {
@@ -1508,59 +1524,31 @@ void StartMotorTask(void *argument)
 //		}
 	  if(flagReceived==1&&flagDone!=1){
 		  Target_Distance=atoi(aRxBuffer+1);
-			if(aRxBuffer[0]=='W'){
-				if(distanceTraveled < Target_Distance){
+			if(aRxBuffer[0]=='W' && distanceTraveled < Target_Distance){
 				  Move_Straight();
-				}
-				else{
-				flagDone=1;
-				}
 			}
-			else if(aRxBuffer[0]=='D'){
-				if(aRxBuffer[1]=='1'){
-					if(error_angle<135){
+			else if(aRxBuffer[0]=='D'&&aRxBuffer[1]=='1'&&error_angle<135){
 						Set_Motor_Direction(1);
 						Move_Right();
-					}
-				}
-			else if(aRxBuffer[1]=='0'){
-				if(error_angle>55){
+			}
+			else if(aRxBuffer[0]=='D'&&aRxBuffer[1]=='0'&&error_angle>55){
 						Set_Motor_Direction(0);
 						Move_Right();
-					}
-				}
-				else{
-					flagDone=1;
-				}
 			}
-			else if(aRxBuffer[0]=='A'){
-				if(aRxBuffer[1]=='1'){
-					if(error_angle>55){
+			else if(aRxBuffer[0]=='A' &&aRxBuffer[1]=='1'&&error_angle>55){
 						Set_Motor_Direction(1);
 						Move_Left();
 					}
-				}
-				else if(aRxBuffer[1]=='0'){
-					if(error_angle<135){
+			else if(aRxBuffer[0]=='A'&&aRxBuffer[1]=='0'&&error_angle<135){
 						Set_Motor_Direction(0);
 						Move_Left();
-					}
-				}
-				else{
-					flagDone=1;
-				}
 			}
-			else if(aRxBuffer[0]=='S')
+			else if(aRxBuffer[0]=='S' && distanceTraveled < Target_Distance)
 			{
-				if(distanceTraveled < Target_Distance)
-				{
 					Move_Backwards();
-				}
-				else{
-					flagDone=1;
-				}
 			}
 			else{
+				flagDone=1;
 				flagReceived=0;
 			}
 		}
