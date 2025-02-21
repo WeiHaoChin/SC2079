@@ -55,5 +55,5 @@ void ICM20948_readMagnetometer_XY(I2C_HandleTypeDef * hi2c, float magXY[2]);
 void ICM20948_readMagnetometer_all(I2C_HandleTypeDef * hi2c, float mag[3]);
 
 void ICM20948_CalibrateGyro(I2C_HandleTypeDef * hi2c,const uint8_t sensitivity,int samples);
-
+void ICM20948_CalibrateAccel(I2C_HandleTypeDef * hi2c,const uint8_t sensitivity,int samples);
 #endif /* INC_ICM20948_H_ */

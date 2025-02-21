@@ -26,6 +26,10 @@
 #include "math.h"
 #include "ICM20948.h"
 #include "IMU.h"
+#include "IMUFilter.h"
+#include <string.h>
+#include "stm32f4xx_hal.h"
+#include "pid.h"
 #include "magcal.h"
 /* USER CODE END Includes */
 
@@ -38,7 +42,7 @@
 /* USER CODE BEGIN PD */
 #define MAX_SERVO 230
 #define MIN_SERVO 70
-
+int tempflag=1;
 #define MAX_SERVO_Angle 180
 #define MIN_SERVO_Angle 0
 static float filtered_gyro = 0,last_raw=0,reset_hpf=0;
@@ -46,6 +50,7 @@ float alpha = 0.95;
 #define WHEEL_DIAMETER 6.5    // 6.5 cm (in meters)
 int Target_Distance;  // 80 cm in meters (0.8 meters)
 #define PI 3.14159265359
+#define DEG_TO_RAD (PI/ 180.0)
 float distanceTraveled = 0.0;  // Total distance traveled in meters
 float delta_time_sec=0;
 float gyro_offset = 0.0;
@@ -92,13 +97,13 @@ const osThreadAttr_t defaultTask_attributes = {
 osThreadId_t oledTaskHandle;
 const osThreadAttr_t oledTask_attributes = {
   .name = "oledTask",
-  .stack_size = 1024 * 4,
+  .stack_size = 256 * 4,
   .priority = (osPriority_t) osPriorityLow,
 };
-/* Definitions for ultraSonicTask */
-osThreadId_t ultraSonicTaskHandle;
-const osThreadAttr_t ultraSonicTask_attributes = {
-  .name = "ultraSonicTask",
+/* Definitions for sensorTask */
+osThreadId_t sensorTaskHandle;
+const osThreadAttr_t sensorTask_attributes = {
+  .name = "sensorTask",
   .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
@@ -130,11 +135,20 @@ const osThreadAttr_t IRTask_attributes = {
   .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
+/* Definitions for robotTask */
+osThreadId_t robotTaskHandle;
+const osThreadAttr_t robotTask_attributes = {
+  .name = "robotTask",
+  .stack_size = 256 * 4,
+  .priority = (osPriority_t) osPriorityHigh,
+};
 /* USER CODE BEGIN PV */
 //Ultrasonic
 int tc1=0,tc2=0,echo=0;
 float g_distanceUS=0;//ultrasonic distance
 double RPM_L=0,RPM_R=0;//Encoder
+
+double RPS_L=0,RPS_R=0;
 
 vec3 accel={};
 vec3 gyro={};
@@ -145,14 +159,17 @@ MagCalParams mag_params={-1.88,-18.15,-40.05,
 						0,0,0.23};
 
 extern float magOffset[];
-double q0,q1,q2,q3;
-float yaw,pitch,roll;
+float q[4]={1,0,0,0};
+float yaw=0,pitch,roll;
+PIDController LMotorPID;
+PIDController RMotorPID;
 
 int servo_pwm=150;
 int pwmValL,pwmValR;
 float degree=0;
 int angle;
 
+#define RECEIVE_BUFFER_SIZE 4
 #define Slight_Right 90
 #define Slight_Left 100
 #define Right 0
@@ -180,16 +197,20 @@ void StartServoTask(void *argument);
 void StartMotorTask(void *argument);
 void StartEncoderTask(void *argument);
 void Start_IRTask(void *argument);
+void startrobotTask(void *argument);
 
 /* USER CODE BEGIN PFP */
 void delay_us(uint16_t us);
 void servo_check(uint8_t* pwm);
+void set_motor_pwm(int32_t L,int32_t R);
+void set_servo_angle(uint8_t value);
 void functionCheck();
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 uint8_t aRxBuffer[3]={0};
+uint8_t buf[5]={0};
 
 //SET both wheel direction
 void Set_Motor_Direction(int foward_flag) {
@@ -206,6 +227,260 @@ void delay_us(uint16_t us)
 {
 	__HAL_TIM_SET_COUNTER(&htim6,0);
 	while(__HAL_TIM_GET_COUNTER(&htim6)<us);
+
+}
+void resetYaw()
+{	q[0]=1; q[1]=0; q[2]=0; q[3]=0;
+	yaw=0;
+	PID_Reset(&LMotorPID);
+	PID_Reset(&RMotorPID);
+}
+void updateYaw()//update yaw reading using filter
+{
+	static uint32_t prevtick=0;
+
+	if(HAL_GetTick()-prevtick>1000L)//RST if never update for more than 1 second
+		{prevtick=HAL_GetTick();return;}
+	ICM20948_readAccelerometer_all(&hi2c1,0,ACCEL_SENS,&accel);
+	ICM20948_readGyroscope_all(&hi2c1, 0, GYRO_SENS, &gyro);
+		  	  //ICM20948_readMagnetometer_all(&hi2c1,&mag);
+		  	  //magcal_adjust(&mag,&mag_params);
+
+		  	  //Madgwick Mahony
+	MadgwickQuaternionUpdate(accel.x*9.81f,accel.y*9.81f,accel.z*9.81f,
+		  			  gyro.x*DEG_TO_RAD,-gyro.y*DEG_TO_RAD,gyro.z*DEG_TO_RAD,
+					  (HAL_GetTick()-prevtick)*0.001f,q);
+
+		  	  prevtick=HAL_GetTick();
+		  	  yaw = GetYawFromQ(q);
+	}
+void Backward(int target)
+{
+
+	//Ensure yaw is reseted before turning
+	//int target=-85;//90
+	//int target=25;//360
+	static uint8_t bTurn=1;
+	if(bTurn&& target != 0)
+	{
+		set_servo_angle(Center);
+		osDelay(750);
+		resetYaw();
+		bTurn=0;
+	}
+	updateYaw();
+	//osDelay(10);
+	LMotorPID.setpoint=2;
+	RMotorPID.setpoint=2;
+
+	if (yaw > target - 2.0f )
+			  {
+				  set_servo_angle(Slight_Left);
+			  }
+	else if(yaw < target + 2.0f)
+	{
+		set_servo_angle(Slight_Right);
+	}
+//	else if (yaw > target - 20.0f && yaw < target + 20.0f)
+//	{
+//	  LMotorPID.setpoint=0.5;
+//	  RMotorPID.setpoint=0.35;
+//	}
+	int32_t L=(int32_t)PID_Update(&LMotorPID, RPS_L);
+	int32_t R=(int32_t)PID_Update(&RMotorPID, RPS_R);
+	set_motor_pwm(L, R);
+
+}
+void Forward(int target)
+{
+
+	//Ensure yaw is reseted before turning
+	//int target=-85;//90
+	//int target=25;//360
+	static uint8_t bTurn=1;
+	if(bTurn&& target != 0)
+	{
+		set_servo_angle(Center);
+		osDelay(750);
+		resetYaw();
+		bTurn=0;
+	}
+	updateYaw();
+	//osDelay(10);
+	LMotorPID.setpoint=2;
+	RMotorPID.setpoint=2;
+
+	if (yaw > target - 2.0f )
+			  {
+				  set_servo_angle(Slight_Right);
+			  }
+	else if(yaw < target + 2.0f)
+	{
+		set_servo_angle(Slight_Left);
+	}
+//	else if (yaw > target - 20.0f && yaw < target + 20.0f)
+//	{
+//	  LMotorPID.setpoint=0.5;
+//	  RMotorPID.setpoint=0.35;
+//	}
+	int32_t L=(int32_t)PID_Update(&LMotorPID, RPS_L);
+	int32_t R=(int32_t)PID_Update(&RMotorPID, RPS_R);
+	set_motor_pwm(L, R);
+
+}
+
+void ForwardLeft(int target)
+{
+	//Ensure yaw is reseted before turning
+// -25 for 360degree        85 for 90degree
+	static uint8_t bTurn=1;
+		if(bTurn&& target != 0)
+		{
+			set_servo_angle(Right);
+			osDelay(750);
+			resetYaw();
+			bTurn=0;
+		}
+	updateYaw();
+
+	LMotorPID.setpoint=0.7;
+	RMotorPID.setpoint=1;
+
+	if (yaw > target - 2.0f && yaw < target + 2.0f)
+			  {
+				set_motor_pwm(0, 0);
+				PID_Reset(&LMotorPID);
+				PID_Reset(&RMotorPID);
+				set_servo_angle(Center);
+				bTurn=1;
+				flagDone=1;
+
+				return;
+			  }
+	else if (yaw > target - 20.0f && yaw < target + 20.0f)
+	{
+	  LMotorPID.setpoint=0.35;
+	  RMotorPID.setpoint=0.5;
+	}
+	int32_t L=(int32_t)PID_Update(&LMotorPID, RPS_L);
+	int32_t R=(int32_t)PID_Update(&RMotorPID, RPS_R);
+	set_motor_pwm(L, R);
+}
+void ForwardRight(int target)
+{
+
+	//Ensure yaw is reseted before turning
+	//int target=-85;//90
+	//int target=25;//360
+	static uint8_t bTurn=1;
+	if(bTurn&& target != 0)
+	{
+		set_servo_angle(Right);
+		osDelay(750);
+		resetYaw();
+		bTurn=0;
+	}
+	updateYaw();
+	//osDelay(10);
+	LMotorPID.setpoint=1;
+	RMotorPID.setpoint=0.7;
+
+	if (yaw > target - 2.0f && yaw < target + 2.0f)
+			  {
+				  set_motor_pwm(0, 0);
+				  PID_Reset(&LMotorPID);
+				  PID_Reset(&RMotorPID);
+				  set_servo_angle(Center);
+				  bTurn=1;
+				  flagDone=1;
+				  tempflag=0;count++;
+				  return;
+			  }
+	else if (yaw > target - 20.0f && yaw < target + 20.0f)
+	{
+	  LMotorPID.setpoint=0.5;
+	  RMotorPID.setpoint=0.35;
+	}
+	int32_t L=(int32_t)PID_Update(&LMotorPID, RPS_L);
+	int32_t R=(int32_t)PID_Update(&RMotorPID, RPS_R);
+	set_motor_pwm(L, R);
+
+}
+void BackLeft(int target)
+{
+	//Ensure yaw is reseted before turning
+// -25 for 360degree        85 for 90degree
+	static uint8_t bTurn=1;
+		if(bTurn&& target != 0)
+		{
+			set_servo_angle(Left);
+			osDelay(750);
+			resetYaw();
+			bTurn=0;
+		}
+	updateYaw();
+
+	LMotorPID.setpoint=0.7;
+	RMotorPID.setpoint=1;
+
+	if (yaw > target - 2.0f && yaw < target + 2.0f)
+			  {
+				set_motor_pwm(0, 0);
+				PID_Reset(&LMotorPID);
+				PID_Reset(&RMotorPID);
+				set_servo_angle(Center);
+				bTurn=1;
+				flagDone=1;
+
+				return;
+			  }
+	else if (yaw > target - 20.0f && yaw < target + 20.0f)
+	{
+	  LMotorPID.setpoint=0.35;
+	  RMotorPID.setpoint=0.5;
+	}
+	int32_t L=(int32_t)PID_Update(&LMotorPID, RPS_L);
+	int32_t R=(int32_t)PID_Update(&RMotorPID, RPS_R);
+	set_motor_pwm(L, R);
+}
+void BackRight(int target)
+{
+
+	//Ensure yaw is reseted before turning
+	//int target=-85;//90
+	//int target=25;//360
+	static uint8_t bTurn=1;
+	if(bTurn&& target != 0)
+	{
+		set_servo_angle(Right);
+		osDelay(750);
+		resetYaw();
+		bTurn=0;
+	}
+	updateYaw();
+	//osDelay(10);
+	LMotorPID.setpoint=1;
+	RMotorPID.setpoint=0.7;
+
+	if (yaw > target - 2.0f && yaw < target + 2.0f)
+			  {
+				  set_motor_pwm(0, 0);
+				  PID_Reset(&LMotorPID);
+				  PID_Reset(&RMotorPID);
+				  set_servo_angle(Center);
+				  bTurn=1;
+				  flagDone=1;
+				  tempflag=0;count++;
+				  return;
+			  }
+	else if (yaw > target - 20.0f && yaw < target + 20.0f)
+	{
+	  LMotorPID.setpoint=0.5;
+	  RMotorPID.setpoint=0.35;
+	}
+	int32_t L=(int32_t)PID_Update(&LMotorPID, RPS_L);
+	int32_t R=(int32_t)PID_Update(&RMotorPID, RPS_R);
+	set_motor_pwm(L, R);
 
 }
 void reset_gyro_at_rest() {
@@ -236,7 +511,25 @@ float high_pass_filter(float raw_gyro, float alpha)
     return filtered_gyro;
 }
 
+void set_motor_pwm(int32_t L,int32_t R)
+{	//4k max pwm
 
+	pwmValL=L;
+	pwmValR=R;
+	 if(pwmValL<0)
+		 pwmValL=500;
+	 else if(pwmValL>4000)
+		 pwmValL=4000;
+
+	 if(pwmValR<0)
+		  pwmValR=500;
+	 else if(pwmValL>4000)
+		  pwmValR=4000;
+
+	 __HAL_TIM_SetCompare(&htim8, TIM_CHANNEL_1, pwmValL);
+	 __HAL_TIM_SetCompare(&htim8, TIM_CHANNEL_2, pwmValR);
+
+	}
 void set_servo_pwm(uint8_t value) //not in use
 {
 	servo_pwm=value;
@@ -434,12 +727,17 @@ int main(void)
   ICM20948_init(&hi2c1,0,GYRO_SENS,ACCEL_SENS);
 
   HAL_Delay(200);
+  ICM20948_CalibrateAccel(&hi2c1, ACCEL_SENS, 250);
   ICM20948_CalibrateGyro(&hi2c1,GYRO_SENS, 250);
 
-  HAL_TIM_Base_Start(&htim6);
+  HAL_TIM_Base_Start(&htim6);// for microseond delay
   HAL_TIM_IC_Start_IT(&htim4, TIM_CHANNEL_1);//Timer for ultra sonic
- HAL_UART_Receive_IT(&huart3,(uint8_t *)aRxBuffer,4);//Receive data from uart
+  HAL_UART_Receive_IT(&huart3,(uint8_t *)aRxBuffer,RECEIVE_BUFFER_SIZE);//Receive data from uart
 
+
+  PID_Init(&LMotorPID, 5*100.0f, 15 *100.0f,0 , 0, -1000, 4000);
+  PID_Init(&RMotorPID, 5*100.0f, 15 *100.0f,0 , 0, -1000, 4000);
+  Set_Motor_Direction(1);//Keep forget put lmao
   //MagCalParams params={};
   //magcal_calc_params(&mag_params);
 #ifdef Debug
@@ -473,20 +771,23 @@ int main(void)
   /* creation of oledTask */
   oledTaskHandle = osThreadNew(StartOledTask, NULL, &oledTask_attributes);
 
-  /* creation of ultraSonicTask */
-  ultraSonicTaskHandle = osThreadNew(StartUltraSonic, NULL, &ultraSonicTask_attributes);
+  /* creation of sensorTask */
+  sensorTaskHandle = osThreadNew(StartUltraSonic, NULL, &sensorTask_attributes);
 
   /* creation of servoTask */
-  servoTaskHandle = osThreadNew(StartServoTask, NULL, &servoTask_attributes);
+ // servoTaskHandle = osThreadNew(StartServoTask, NULL, &servoTask_attributes);
 
   /* creation of motorTask */
-  motorTaskHandle = osThreadNew(StartMotorTask, NULL, &motorTask_attributes);
+  //motorTaskHandle = osThreadNew(StartMotorTask, NULL, &motorTask_attributes);
 
   /* creation of encoderTask */
   encoderTaskHandle = osThreadNew(StartEncoderTask, NULL, &encoderTask_attributes);
 
   /* creation of IRTask */
-  IRTaskHandle = osThreadNew(Start_IRTask, NULL, &IRTask_attributes);
+ // IRTaskHandle = osThreadNew(Start_IRTask, NULL, &IRTask_attributes);
+
+  /* creation of robotTask */
+  robotTaskHandle = osThreadNew(startrobotTask, NULL, &robotTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -1128,11 +1429,17 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef * huart)
 {
 	//prevent unused argument
 	UNUSED(huart);
-	HAL_UART_Transmit(&huart3,(uint8_t *)aRxBuffer,4,0xFFFF);
+	 snprintf(buf,sizeof(buf),"%5.2f",g_distanceUS);
+	 if (strncmp(aRxBuffer, "RUSD",4) == 0)
+	   {
+		HAL_UART_Transmit(&huart3, (uint8_t*)buf,5,0XFFFF);
+	    }
+	//HAL_UART_Transmit(&huart3,(uint8_t *)aRxBuffer,4,0xFFFF);
 	flagReceived=1;
 	// servo_pwm  = atoi(aRxBuffer);
 	//memset(aRxBuffer,0,sizeof(aRxBuffer));
-	 HAL_UART_Receive_IT(&huart3,(uint8_t *)aRxBuffer,4);
+	 HAL_UART_Receive_IT(&huart3,(uint8_t *)aRxBuffer,RECEIVE_BUFFER_SIZE);
+
 }
 void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
 {
@@ -1190,6 +1497,8 @@ void Move_Right(){
 
 void Motor_Stop()
 {
+	  PID_Reset(&LMotorPID);
+	  PID_Reset(&RMotorPID);
 	degree=0;
 	distanceTraveled=0;
     pwmValL = 0;
@@ -1199,7 +1508,7 @@ void Motor_Stop()
 	set_servo_angle(Center);
 	osDelay(1000);
 	//reset_gyro_at_rest();
-    count++;
+  //  count++;
 }
 
 void Move_Straight(){
@@ -1294,27 +1603,52 @@ void StartOledTask(void *argument)
 {
   /* USER CODE BEGIN StartOledTask */
 	char text[16]={};
+	char temp[50]={};
+
+//	LMotorPID.Kp=5*100.0f;
+//	  	LMotorPID.Ki=15 *100.0f;
+//	  	RMotorPID.Kp=5*100.0f;
+//	  	RMotorPID.Ki=15 *100.0f;
+//	LMotorPID.setpoint = 1;
+//	RMotorPID.setpoint = 1;
 
   /* Infinite loop */
   for(;;)
   {
 
 //
-		snprintf(text, sizeof(text), "EA:%d", error_angle);
+		 //char buf[5];
+		snprintf(text, sizeof(text), "EA:%.2f", LMotorPID.setpoint);
 		OLED_ShowString(10, 40, text);
 //		  snprintf(text, sizeof(text), "X:%d", flagReceived);
-		snprintf(text, sizeof(text), "Distance:%d", g_distanceUS);
+		snprintf(text, sizeof(text), "Distance:%.2f", g_distanceUS);
 		  OLED_ShowString(10, 20, text);
 		//		  snprintf(text, sizeof(text), "X:%d", flagReceived);
 		//		  OLED_ShowString(10, 50, text);
 //		  snprintf(text, sizeof(text), "PWM:%c", aRxBuffer[0]);
 //		  OLED_ShowString(10, 20, text);
-		  snprintf(text, sizeof(text), "degree :%5.2f", degree);
+
+
+		  snprintf(text, sizeof(text), "degree :%5.2f", yaw);//BEFORE DEGREE
 		  OLED_ShowString(10, 30, text);
 		  OLED_Refresh_Gram();
 		  //snprintf(text, sizeof(text), "A:%d", angle);
 		  snprintf(text, sizeof(text), "Distance: %.2f m", distanceTraveled);
 		  OLED_ShowString(10, 10, text);
+
+
+//		  Set_Motor_Direction(1);
+//		  int LPwm=(int32_t)PID_Update(&LMotorPID, RPS_L);
+//		  int RPwm=(int32_t)PID_Update(&RMotorPID, RPS_R);
+//		 //set_motor_pwm(LPwm, RPwm);
+//
+//		  if(LMotorPID.setpoint !=0 && RMotorPID.setpoint !=0)
+//			  set_motor_pwm(LPwm, RPwm);
+
+ //snprintf(temp,sizeof(temp),"%.5f,%.5f,%.2f,%d\r\n",RPS_L,RPS_R,LMotorPID.setpoint,pwmValL);
+		  snprintf(temp,sizeof(temp),"%.5f\r\n",yaw);
+
+		// HAL_UART_Transmit_IT(&huart3,(uint8_t*) temp, strlen(temp));
 //	  ICM20948_readAccelerometer_all(&hi2c1,0,ACCEL_SENS,&accel);
 	  /*snprintf(text, sizeof(text), "X:%5.2f", 2.5);
 	  OLED_ShowString(10, 10, text);*/
@@ -1366,6 +1700,9 @@ void StartUltraSonic(void *argument)
 	    HAL_GPIO_WritePin(GPIOE, TRIG_Pin,GPIO_PIN_RESET);
 	    //g_distanceUS = (tc2 > tc1 ? (tc2 - tc1) : (65535 - tc1 + tc2)) * 0.034 / 2; //echo/1000000.0f *343.0f/2.0f *100.0f equivalent
     osDelay(10);
+	IR_Left_Read();
+	IR_Right_Read();
+	osDelay(100);
   }
   /* USER CODE END StartUltraSonic */
 }
@@ -1387,13 +1724,13 @@ void StartServoTask(void *argument)
 	//Calibrate();
 	start_time = HAL_GetTick();
 	end_time = HAL_GetTick();  // Record end time
-	delta_time_sec= (end_time - start_time) / 1000.0f; // Time difference in ms
+	delta_time_sec= (end_time - start_time) * 0.001f; // Time difference in ms
   /* Infinite loop */
   for(;;)
   {
 		ICM20948_readGyroscope_all(&hi2c1, 0, GYRO_SENS, &accel);
 		end_time = HAL_GetTick();
-		delta_time_sec= (end_time - start_time) / 1000.0f;
+		delta_time_sec= (end_time - start_time) * 0.001f;
 		 float filtered_gyro_value = high_pass_filter(accel.z, alpha);
 		  degree+=filtered_gyro_value * delta_time_sec; //accel.z
 		  error_angle=Center-(int)degree;
@@ -1451,11 +1788,9 @@ void StartServoTask(void *argument)
 * @retval None
 */
 /* USER CODE END Header_StartMotorTask */
-
-
-  /* USER CODE BEGIN StartMotorTask */
 void StartMotorTask(void *argument)
 {
+  /* USER CODE BEGIN StartMotorTask */
 	HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_1);
 	HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_2);
 	while(HAL_GPIO_ReadPin(GPIOD, GPIO_PIN_8)==1);
@@ -1545,7 +1880,8 @@ void StartMotorTask(void *argument)
 			}
 			else if(aRxBuffer[0]=='S' && distanceTraveled < Target_Distance)
 			{
-					Move_Backwards();
+					Set_Motor_Direction(0);
+					Backward(0);
 			}
 			else{
 				flagDone=1;
@@ -1622,6 +1958,10 @@ void StartEncoderTask(void *argument)
 	  RPM_L = ((float) diffL / (ENCODER_PULSES_PER_REVOLUTION * 4));// * 60.0;
 	  RPM_R = ((float) diffR / (ENCODER_PULSES_PER_REVOLUTION * 4));
 
+	  float dt = (HAL_GetTick() - tick) * 0.001f;
+	  RPS_L=((float) diffL / (ENCODER_PULSES_PER_REVOLUTION * 4* dt));
+	  RPS_R=((float) diffR / (ENCODER_PULSES_PER_REVOLUTION * 4 *dt));
+
       // Calculate the distance traveled by each wheel (in meters)
       float distanceLeftThisSecond = RPM_L * PI * WHEEL_DIAMETER;
       float distanceRightThisSecond = RPM_R * PI * WHEEL_DIAMETER;
@@ -1657,6 +1997,192 @@ void Start_IRTask(void *argument)
 		osDelay(150);
   }
   /* USER CODE END Start_IRTask */
+}
+
+/* USER CODE BEGIN Header_startrobotTask */
+/**
+* @brief Function implementing the robotTask thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_startrobotTask */
+void startrobotTask(void *argument)
+{
+  /* USER CODE BEGIN startrobotTask */
+  /* Infinite loop */
+	HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_4);//Start servo pwm timer
+	degree=0;
+	HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_1);
+	HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_2);
+
+	while(HAL_GPIO_ReadPin(GPIOD, GPIO_PIN_8)==1);
+	int target=85;
+
+		//{osDelay(200);osThreadYield();}
+	//while(calibrate==0);
+	set_servo_angle(Center);
+	osDelay(200);
+	//Calibrate();
+	start_time = HAL_GetTick();
+	end_time = HAL_GetTick();  // Record end time
+	delta_time_sec= (end_time - start_time) * 0.001f; // Time difference in ms
+  for(;;)
+  {
+
+	  //TEST TURN SEGMENT
+	  {
+
+		  if(HAL_GPIO_ReadPin(GPIOD, GPIO_PIN_8)==0)
+		  {
+			  //resetYaw();
+			  //yaw=0;
+			  tempflag=1;
+			  //target=85;
+			  //set_servo_angle(Right);
+			  Set_Motor_Direction(0);
+			  osDelay(550);
+		  }
+		  if(tempflag==1)
+			  {
+			  //int target=-25;
+			  //ForwardRight(-target);
+			  //BackRight(85);
+			  /*if (yaw > target - 2.0f && yaw < target + 2.0f)
+			  {
+				  set_motor_pwm(0, 0);
+				  PID_Reset(&LMotorPID);
+				  PID_Reset(&RMotorPID);
+				  set_servo_angle(Center);
+				  target = 85;
+				  tempflag=0;count++;
+			  }*/
+
+			  	  }/*else
+				  {
+			  		set_motor_pwm(0, 0);
+				  PID_Reset(&LMotorPID);
+				  PID_Reset(&RMotorPID);
+				  set_servo_angle(Center);
+				  target = 0;
+
+			  		  osDelay(200);
+				  }*/
+
+	  }
+	  //END OF TEST SEGMENT
+	  	  	ICM20948_readGyroscope_all(&hi2c1, 0, GYRO_SENS, &accel);
+	  		end_time = HAL_GetTick();
+	  		delta_time_sec= (end_time - start_time) * 0.001f;
+	  		 float filtered_gyro_value = high_pass_filter(accel.z, alpha);
+	  		  degree+=filtered_gyro_value * delta_time_sec; //accel.z
+	  		  error_angle=Center-(int)degree;
+//	  		  if(aRxBuffer[0]=='W')
+//	  		  {
+//	  			  if(error_angle>(Center+.2)) //(error_angle>(Center+.5))
+//	  			  {
+//	  				  //set_servo_pwm(146);//turn slght left 146
+//	  				  set_servo_angle(Slight_Left);
+//	  			  }
+//	  			  else if(error_angle<(Center-.2))
+//	  			  {
+//	  				  //set_servo_pwm(160); //turn slight right 160
+//	  				  set_servo_angle(Slight_Right);
+//	  			  }
+//	  			  else{
+//	  				  //set_servo_pwm(152);
+//	  				  set_servo_angle(Center);
+//	  			  }
+//	  		  }
+//	  		  else if(aRxBuffer[0]=='S')
+//	  		  {
+//	  			  if(error_angle<(Center-.2)) //(error_angle>(Center+.5))
+//	  			  {
+//	  				  //set_servo_pwm(146);//turn slght left 146
+//	  				  set_servo_angle(Slight_Left);
+//	  			  }
+//	  			  else if(error_angle>(Center+.2))
+//	  			  {
+//	  				  //set_servo_pwm(160); //turn slight right 160
+//	  				  set_servo_angle(Slight_Right);
+//	  			  }
+//	  			  else{
+//	  				  //set_servo_pwm(152);
+//	  				  set_servo_angle(Center);
+//	  			  }
+//	  		  }
+	  		  start_time = HAL_GetTick();
+	  		  if(flagReceived==1&&flagDone!=1){
+	  			  Target_Distance=atoi(aRxBuffer+1);
+	  				if(aRxBuffer[0]=='W' && distanceTraveled < Target_Distance){
+	  					Set_Motor_Direction(1);
+	  					Forward(0);
+//	  					  Move_Straight();
+//	  					if(error_angle>(Center+.2)) //(error_angle>(Center+.5))
+//	  						  			  {
+//	  						  				  //set_servo_pwm(146);//turn slght left 146
+//	  						  				  set_servo_angle(Slight_Left);
+//	  						  			  }
+//	  						  			  else if(error_angle<(Center-.2))
+//	  						  			  {
+//	  						  				  //set_servo_pwm(160); //turn slight right 160
+//	  						  				  set_servo_angle(Slight_Right);
+//	  						  			  }
+//	  						  			  else{
+//	  						  				  //set_servo_pwm(152);
+//	  						  				  set_servo_angle(Center);
+//	  						  			  }
+	  				}
+	  				else if(aRxBuffer[0]=='D'&&aRxBuffer[1]=='1'){
+	  							Set_Motor_Direction(1);
+	  							//Move_Right();
+	  							ForwardRight(-85);
+	  				}
+	  				else if(aRxBuffer[0]=='D'&&aRxBuffer[1]=='0'){
+	  							Set_Motor_Direction(0);
+	  							BackRight(85);
+	  				}
+	  				else if(aRxBuffer[0]=='A' &&aRxBuffer[1]=='1'){
+	  							Set_Motor_Direction(1);
+	  							ForwardLeft(85);
+	  						}
+	  				else if(aRxBuffer[0]=='A'&&aRxBuffer[1]=='0'){
+	  							Set_Motor_Direction(0);
+	  							BackLeft(-87);
+	  				}
+	  				else if(aRxBuffer[0]=='S' && distanceTraveled < Target_Distance)
+	  				{
+	  						Move_Backwards();
+	  						 if(error_angle<(Center-.2)) //(error_angle>(Center+.5))
+	  							  			  {
+	  							  				  //set_servo_pwm(146);//turn slght left 146
+	  							  				  set_servo_angle(Slight_Left);
+	  							  			  }
+	  							  			  else if(error_angle>(Center+.2))
+	  							  			  {
+	  							  				  //set_servo_pwm(160); //turn slight right 160
+	  							  				  set_servo_angle(Slight_Right);
+	  							  			  }
+	  							  			  else{
+	  							  				  //set_servo_pwm(152);
+	  							  				  set_servo_angle(Center);
+	  							  			  }
+	  				}
+	  				else{
+	  					flagDone=1;
+	  					flagReceived=0;
+	  				}
+	  			}
+	  			else if(flagDone==1)
+	  			{
+	  				Motor_Stop();
+	  				//HAL_UART_Transmit(&huart3,(uint8_t *)"ACK",3,0xFFFF);
+	  				flagReceived=0;
+	  				flagDone = 0;
+	  			}
+
+    osDelay(10);
+  }
+  /* USER CODE END startrobotTask */
 }
 
 /**

@@ -1,6 +1,7 @@
 
 #include "ICM20948.h"
 
+static float accel_offset[3] = {0,0,0};
 
 HAL_StatusTypeDef _ICM20948_SelectUserBank(I2C_HandleTypeDef * hi2c, uint8_t const selectI2cAddress, int userBankNum) {
 	HAL_StatusTypeDef status = HAL_OK;
@@ -332,6 +333,9 @@ void ICM20948_readAccelerometer_all(I2C_HandleTypeDef * hi2c, uint8_t const sele
 			readings[Z] = rD[Z] / ACCEL_SENSITIVITY_SCALE_FACTOR_16G;
 			break;
 	}
+	readings[X] -=accel_offset[X];
+	readings[Y] -=accel_offset[Y];
+	readings[Z] -=accel_offset[Z];
 }
 
 void ICM20948_readMagnetometer_XY(I2C_HandleTypeDef * hi2c, float magXY[2]) {
@@ -414,4 +418,26 @@ void ICM20948_CalibrateGyro(I2C_HandleTypeDef * hi2c,const uint8_t sensitivity,i
 
 		_ICM20948_BurstWrite(hi2c,0,ICM20948__USER_BANK_2__XG_OFFSET_H__REGISTER,6,gyro_offset);
 		_ICM20948_SelectUserBank(hi2c,0, USER_BANK_0);
+	}
+
+void ICM20948_CalibrateAccel(I2C_HandleTypeDef * hi2c,const uint8_t sensitivity,int samples)
+{
+	float accel_bias[3] = {0};
+
+			for(int i = 0; i < samples; i++)
+			{
+
+				//_ICM20948_SelectUserBank(hi2c, selectI2cAddress, USER_BANK_0);
+				float temp[3];
+				ICM20948_readAccelerometer_all(hi2c, 0, sensitivity, temp);
+
+
+				accel_bias[0] += temp[0];
+				accel_bias[1] += temp[1];
+				accel_bias[2] += (temp[2]-1.0f);//ignore the gravity
+			}
+
+			accel_offset[0] =accel_bias[0]/ samples;
+			accel_offset[1] =accel_bias[1]/ samples;
+			accel_offset[2] =accel_bias[2]/ samples;
 	}
