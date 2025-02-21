@@ -1,0 +1,46 @@
+../Core/Inc/IMU.h:30:6:SendMagDataUART	48	static
+../Core/Inc/IMU.h:63:6:ShowMagDataOled	64	static
+../Core/Inc/magcal.h:24:7:magcal_calc_params	1352	static
+../Core/Inc/magcal.h:166:5:user_is_pressed	8	static
+../Core/Inc/magcal.h:168:7:dist_squared	48	static
+../Core/Inc/magcal.h:175:6:magcal_adjust	32	static
+../Core/Src/main - Copy.c:195:6:Set_Motor_Direction	16	static
+../Core/Src/main - Copy.c:205:6:delay_us	16	static
+../Core/Src/main - Copy.c:211:6:reset_gyro_at_rest	4	static
+../Core/Src/main - Copy.c:215:7:get_corrected_gyro	4	static
+../Core/Src/main - Copy.c:218:7:high_pass_filter	16	static
+../Core/Src/main - Copy.c:234:6:set_servo_pwm	16	static
+../Core/Src/main - Copy.c:247:6:set_servo_angle	16	static
+../Core/Src/main - Copy.c:282:6:PID_Control	56	static
+../Core/Src/main - Copy.c:324:6:functionCheck	40	static
+../Core/Src/main - Copy.c:391:5:main	8	static
+../Core/Src/main - Copy.c:514:6:SystemClock_Config	88	static
+../Core/Src/main - Copy.c:556:13:MX_ADC1_Init	24	static
+../Core/Src/main - Copy.c:608:13:MX_ADC2_Init	24	static
+../Core/Src/main - Copy.c:660:13:MX_I2C1_Init	8	static
+../Core/Src/main - Copy.c:694:13:MX_TIM1_Init	96	static
+../Core/Src/main - Copy.c:768:13:MX_TIM2_Init	56	static
+../Core/Src/main - Copy.c:817:13:MX_TIM3_Init	56	static
+../Core/Src/main - Copy.c:866:13:MX_TIM4_Init	48	static
+../Core/Src/main - Copy.c:924:13:MX_TIM6_Init	16	static
+../Core/Src/main - Copy.c:962:13:MX_TIM8_Init	96	static
+../Core/Src/main - Copy.c:1040:13:MX_USART3_UART_Init	8	static
+../Core/Src/main - Copy.c:1073:13:MX_GPIO_Init	48	static
+../Core/Src/main - Copy.c:1121:6:HAL_UART_RxCpltCallback	16	static
+../Core/Src/main - Copy.c:1131:6:HAL_TIM_IC_CaptureCallback	16	static
+../Core/Src/main - Copy.c:1152:6:IR_Left_Read	8	static
+../Core/Src/main - Copy.c:1160:6:IR_Right_Read	8	static
+../Core/Src/main - Copy.c:1168:6:Move_Left	8	static
+../Core/Src/main - Copy.c:1174:6:Move_Right	8	static
+../Core/Src/main - Copy.c:1180:6:Motor_Stop	8	static
+../Core/Src/main - Copy.c:1194:6:Move_Straight	8	static
+../Core/Src/main - Copy.c:1199:6:Move_Backwards	8	static
+../Core/Src/main - Copy.c:1205:6:Calibrate	8	static
+../Core/Src/main - Copy.c:1225:6:StartDefaultTask	16	static
+../Core/Src/main - Copy.c:1276:6:StartOledTask	40	static
+../Core/Src/main - Copy.c:1340:6:StartUltraSonic	16	static
+../Core/Src/main - Copy.c:1363:6:StartServoTask	24	static
+../Core/Src/main - Copy.c:1440:6:StartMotorTask	16	static
+../Core/Src/main - Copy.c:1600:6:StartEncoderTask	48	static
+../Core/Src/main - Copy.c:1660:6:Start_IRTask	16	static
+../Core/Src/main - Copy.c:1677:6:Error_Handler	4	static,ignoring_inline_asm

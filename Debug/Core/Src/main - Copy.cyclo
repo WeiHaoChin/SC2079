@@ -1,0 +1,46 @@
+../Core/Inc/IMU.h:30:6:SendMagDataUART	2
+../Core/Inc/IMU.h:63:6:ShowMagDataOled	2
+../Core/Inc/magcal.h:24:7:magcal_calc_params	23
+../Core/Inc/magcal.h:166:5:user_is_pressed	1
+../Core/Inc/magcal.h:168:7:dist_squared	1
+../Core/Inc/magcal.h:175:6:magcal_adjust	1
+../Core/Src/main - Copy.c:195:6:Set_Motor_Direction	1
+../Core/Src/main - Copy.c:205:6:delay_us	2
+../Core/Src/main - Copy.c:211:6:reset_gyro_at_rest	1
+../Core/Src/main - Copy.c:215:7:get_corrected_gyro	1
+../Core/Src/main - Copy.c:218:7:high_pass_filter	1
+../Core/Src/main - Copy.c:234:6:set_servo_pwm	3
+../Core/Src/main - Copy.c:247:6:set_servo_angle	2
+../Core/Src/main - Copy.c:282:6:PID_Control	5
+../Core/Src/main - Copy.c:324:6:functionCheck	2
+../Core/Src/main - Copy.c:391:5:main	1
+../Core/Src/main - Copy.c:514:6:SystemClock_Config	3
+../Core/Src/main - Copy.c:556:13:MX_ADC1_Init	3
+../Core/Src/main - Copy.c:608:13:MX_ADC2_Init	3
+../Core/Src/main - Copy.c:660:13:MX_I2C1_Init	2
+../Core/Src/main - Copy.c:694:13:MX_TIM1_Init	7
+../Core/Src/main - Copy.c:768:13:MX_TIM2_Init	3
+../Core/Src/main - Copy.c:817:13:MX_TIM3_Init	3
+../Core/Src/main - Copy.c:866:13:MX_TIM4_Init	6
+../Core/Src/main - Copy.c:924:13:MX_TIM6_Init	3
+../Core/Src/main - Copy.c:962:13:MX_TIM8_Init	8
+../Core/Src/main - Copy.c:1040:13:MX_USART3_UART_Init	2
+../Core/Src/main - Copy.c:1073:13:MX_GPIO_Init	1
+../Core/Src/main - Copy.c:1121:6:HAL_UART_RxCpltCallback	1
+../Core/Src/main - Copy.c:1131:6:HAL_TIM_IC_CaptureCallback	5
+../Core/Src/main - Copy.c:1152:6:IR_Left_Read	1
+../Core/Src/main - Copy.c:1160:6:IR_Right_Read	1
+../Core/Src/main - Copy.c:1168:6:Move_Left	1
+../Core/Src/main - Copy.c:1174:6:Move_Right	1
+../Core/Src/main - Copy.c:1180:6:Motor_Stop	1
+../Core/Src/main - Copy.c:1194:6:Move_Straight	1
+../Core/Src/main - Copy.c:1199:6:Move_Backwards	1
+../Core/Src/main - Copy.c:1205:6:Calibrate	1
+../Core/Src/main - Copy.c:1225:6:StartDefaultTask	1
+../Core/Src/main - Copy.c:1276:6:StartOledTask	1
+../Core/Src/main - Copy.c:1340:6:StartUltraSonic	1
+../Core/Src/main - Copy.c:1363:6:StartServoTask	7
+../Core/Src/main - Copy.c:1440:6:StartMotorTask	19
+../Core/Src/main - Copy.c:1600:6:StartEncoderTask	8
+../Core/Src/main - Copy.c:1660:6:Start_IRTask	1
+../Core/Src/main - Copy.c:1677:6:Error_Handler	1
