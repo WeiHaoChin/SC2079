@@ -336,7 +336,7 @@ void ForwardLeft(int target)
 	static uint8_t bTurn=1;
 		if(bTurn&& target != 0)
 		{
-			set_servo_angle(Right);
+			set_servo_angle(Left);
 			osDelay(750);
 			resetYaw();
 			bTurn=0;
@@ -1436,9 +1436,9 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef * huart)
 	    }
 	//HAL_UART_Transmit(&huart3,(uint8_t *)aRxBuffer,4,0xFFFF);
 	flagReceived=1;
+	 HAL_UART_Receive_IT(&huart3,(uint8_t *)aRxBuffer,RECEIVE_BUFFER_SIZE);
 	// servo_pwm  = atoi(aRxBuffer);
 	//memset(aRxBuffer,0,sizeof(aRxBuffer));
-	 HAL_UART_Receive_IT(&huart3,(uint8_t *)aRxBuffer,RECEIVE_BUFFER_SIZE);
 
 }
 void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
@@ -1618,7 +1618,7 @@ void StartOledTask(void *argument)
 
 //
 		 //char buf[5];
-		snprintf(text, sizeof(text), "EA:%.2f", LMotorPID.setpoint);
+		snprintf(text, sizeof(text), "EA:%f", distanceTraveled);
 		OLED_ShowString(10, 40, text);
 //		  snprintf(text, sizeof(text), "X:%d", flagReceived);
 		snprintf(text, sizeof(text), "Distance:%.2f", g_distanceUS);
@@ -1633,7 +1633,7 @@ void StartOledTask(void *argument)
 		  OLED_ShowString(10, 30, text);
 		  OLED_Refresh_Gram();
 		  //snprintf(text, sizeof(text), "A:%d", angle);
-		  snprintf(text, sizeof(text), "Distance: %.2f m", distanceTraveled);
+		  snprintf(text, sizeof(text), "Distance: %d m", Target_Distance);
 		  OLED_ShowString(10, 10, text);
 
 
@@ -1858,7 +1858,7 @@ void StartMotorTask(void *argument)
 //
 //		}
 	  if(flagReceived==1&&flagDone!=1){
-		  Target_Distance=atoi(aRxBuffer+1);
+
 			if(aRxBuffer[0]=='W' && distanceTraveled < Target_Distance){
 				  Move_Straight();
 			}
@@ -2112,30 +2112,18 @@ void startrobotTask(void *argument)
 //	  		  }
 	  		  start_time = HAL_GetTick();
 	  		  if(flagReceived==1&&flagDone!=1){
-	  			  Target_Distance=atoi(aRxBuffer+1);
+	  			  char temp[4] = {0};  // Temporary buffer to hold up to 4 characters + null terminator
+	  			  strncpy(temp, aRxBuffer+1, 3);
+	  			  temp[4]='\0';
+	  			  Target_Distance=atoi(temp);
 	  				if(aRxBuffer[0]=='W' && distanceTraveled < Target_Distance){
 	  					Set_Motor_Direction(1);
 	  					Forward(0);
-//	  					  Move_Straight();
-//	  					if(error_angle>(Center+.2)) //(error_angle>(Center+.5))
-//	  						  			  {
-//	  						  				  //set_servo_pwm(146);//turn slght left 146
-//	  						  				  set_servo_angle(Slight_Left);
-//	  						  			  }
-//	  						  			  else if(error_angle<(Center-.2))
-//	  						  			  {
-//	  						  				  //set_servo_pwm(160); //turn slight right 160
-//	  						  				  set_servo_angle(Slight_Right);
-//	  						  			  }
-//	  						  			  else{
-//	  						  				  //set_servo_pwm(152);
-//	  						  				  set_servo_angle(Center);
-//	  						  			  }
 	  				}
 	  				else if(aRxBuffer[0]=='D'&&aRxBuffer[1]=='1'){
 	  							Set_Motor_Direction(1);
 	  							//Move_Right();
-	  							ForwardRight(-85);
+	  							ForwardRight(-87);
 	  				}
 	  				else if(aRxBuffer[0]=='D'&&aRxBuffer[1]=='0'){
 	  							Set_Motor_Direction(0);
@@ -2151,21 +2139,8 @@ void startrobotTask(void *argument)
 	  				}
 	  				else if(aRxBuffer[0]=='S' && distanceTraveled < Target_Distance)
 	  				{
-	  						Move_Backwards();
-	  						 if(error_angle<(Center-.2)) //(error_angle>(Center+.5))
-	  							  			  {
-	  							  				  //set_servo_pwm(146);//turn slght left 146
-	  							  				  set_servo_angle(Slight_Left);
-	  							  			  }
-	  							  			  else if(error_angle>(Center+.2))
-	  							  			  {
-	  							  				  //set_servo_pwm(160); //turn slight right 160
-	  							  				  set_servo_angle(Slight_Right);
-	  							  			  }
-	  							  			  else{
-	  							  				  //set_servo_pwm(152);
-	  							  				  set_servo_angle(Center);
-	  							  			  }
+	  					Set_Motor_Direction(0);
+	  					Backward(0);
 	  				}
 	  				else{
 	  					flagDone=1;
@@ -2175,7 +2150,7 @@ void startrobotTask(void *argument)
 	  			else if(flagDone==1)
 	  			{
 	  				Motor_Stop();
-	  				//HAL_UART_Transmit(&huart3,(uint8_t *)"ACK",3,0xFFFF);
+	  				HAL_UART_Transmit(&huart3,(uint8_t *)"ACK",3,0xFFFF);
 	  				flagReceived=0;
 	  				flagDone = 0;
 	  			}
