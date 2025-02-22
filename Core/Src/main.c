@@ -45,17 +45,15 @@
 int tempflag=1;
 #define MAX_SERVO_Angle 180
 #define MIN_SERVO_Angle 0
-static float filtered_gyro = 0,last_raw=0,reset_hpf=0;
-float alpha = 0.95;
-#define WHEEL_DIAMETER 6.5    // 6.5 cm (in meters)
-int Target_Distance;  // 80 cm in meters (0.8 meters)
+#define WHEEL_DIAMETER 6.5    // 6.5 cm
+int Target_Distance;  // in cm
 #define PI 3.14159265359
 #define DEG_TO_RAD (PI/ 180.0)
-float distanceTraveled = 0.0;  // Total distance traveled in meters
+float distanceTraveled = 0.0;  // Total distance traveled in cm
 float delta_time_sec=0;
 float gyro_offset = 0.0;
 float current_gyro_reading = 0.0;
-int error_angle=0,calibrate,flagDone=0,flagReceived=0,count=0;
+int calibrate,flagDone=0,flagReceived=0;
 uint32_t start_time, end_time;
 
 //#define Debug
@@ -107,33 +105,12 @@ const osThreadAttr_t sensorTask_attributes = {
   .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
-/* Definitions for servoTask */
-osThreadId_t servoTaskHandle;
-const osThreadAttr_t servoTask_attributes = {
-  .name = "servoTask",
-  .stack_size = 128 * 4,
-  .priority = (osPriority_t) osPriorityHigh,
-};
-/* Definitions for motorTask */
-osThreadId_t motorTaskHandle;
-const osThreadAttr_t motorTask_attributes = {
-  .name = "motorTask",
-  .stack_size = 128 * 4,
-  .priority = (osPriority_t) osPriorityHigh,
-};
 /* Definitions for encoderTask */
 osThreadId_t encoderTaskHandle;
 const osThreadAttr_t encoderTask_attributes = {
   .name = "encoderTask",
   .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityHigh,
-};
-/* Definitions for IRTask */
-osThreadId_t IRTaskHandle;
-const osThreadAttr_t IRTask_attributes = {
-  .name = "IRTask",
-  .stack_size = 128 * 4,
-  .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for robotTask */
 osThreadId_t robotTaskHandle;
@@ -192,11 +169,8 @@ static void MX_ADC1_Init(void);
 static void MX_ADC2_Init(void);
 void StartDefaultTask(void *argument);
 void StartOledTask(void *argument);
-void StartUltraSonic(void *argument);
-void StartServoTask(void *argument);
-void StartMotorTask(void *argument);
+void Startsensor(void *argument);
 void StartEncoderTask(void *argument);
-void Start_IRTask(void *argument);
 void startrobotTask(void *argument);
 
 /* USER CODE BEGIN PFP */
@@ -393,7 +367,7 @@ void ForwardRight(int target)
 				  set_servo_angle(Center);
 				  bTurn=1;
 				  flagDone=1;
-				  tempflag=0;count++;
+				  tempflag=0;
 				  return;
 			  }
 	else if (yaw > target - 20.0f && yaw < target + 20.0f)
@@ -470,7 +444,7 @@ void BackRight(int target)
 				  set_servo_angle(Center);
 				  bTurn=1;
 				  flagDone=1;
-				  tempflag=0;count++;
+				  tempflag=0;
 				  return;
 			  }
 	else if (yaw > target - 20.0f && yaw < target + 20.0f)
@@ -483,34 +457,6 @@ void BackRight(int target)
 	set_motor_pwm(L, R);
 
 }
-void reset_gyro_at_rest() {
-    gyro_offset =accel.z;  // Store the current reading as offset
-}
-
-float get_corrected_gyro() {
-    return accel.z - gyro_offset;  // Subtract the offset from new readings
-}
-float high_pass_filter(float raw_gyro, float alpha)
-{
-    // Apply the filter: filtered value = alpha * current value + (1 - alpha) * previous filtered value
-//	if(raw_gyro<0.15&&raw_gyro>0)
-//	{
-//		//last_raw=raw_gyro;
-//	}
-//	else{
-//	if(reset_hpf){
-//		filtered_gyro=0;
-//		last_raw=raw_gyro;
-//		reset_hpf=0;
-//		return 0;
-//	}
-		filtered_gyro = alpha *(filtered_gyro +raw_gyro-last_raw);
-	    last_raw=raw_gyro;
-//	}
-
-    return filtered_gyro;
-}
-
 void set_motor_pwm(int32_t L,int32_t R)
 {	//4k max pwm
 
@@ -577,46 +523,6 @@ float previous_error_R = 0.0f;
 float integral_L = 0.0f;
 float integral_R = 0.0f;
 
-
-void PID_Control(float target_RPM_R ,float target_RPM_L) {
-    float error_L = target_RPM_L - RPM_L;  // Left motor speed error
-    float error_R = target_RPM_R - RPM_R;  // Right motor speed error
-
-    // Proportional term (current error)
-    float P_L = Kp * error_L;
-    float P_R = Kp * error_R;
-
-    // Integral term (sum of past errors)
-    integral_L += error_L;
-    integral_R += error_R;
-    float I_L = Ki * integral_L;
-    float I_R = Ki * integral_R;
-
-    // Derivative term (change in error)
-    float D_L = Kd * (error_L - previous_error_L);
-    float D_R = Kd * (error_R - previous_error_R);
-
-    // Compute the PID output
-    float PID_output_L = P_L + I_L + D_L;
-    float PID_output_R = P_R + I_R + D_R;
-
-    // Adjust PWM based on PID output (clamping to a valid range)
-    pwmValL = (int16_t)(pwmValL + PID_output_L);
-    pwmValR = (int16_t)(pwmValR + PID_output_R);
-    if (pwmValL > 4000) pwmValL = 4000;
-    if (pwmValL < 2000) pwmValL = 2000;
-
-    if (pwmValR > 4000) pwmValR = 4000;
-    if (pwmValR < 2000) pwmValR = 2000;
-
-    // Set the new PWM values
-    __HAL_TIM_SetCompare(&htim8, TIM_CHANNEL_1, pwmValL);
-    __HAL_TIM_SetCompare(&htim8, TIM_CHANNEL_2, pwmValR);
-
-    // Update previous errors for the next cycle
-    previous_error_L = error_L;
-    previous_error_R = error_R;
-}
 
 
 
@@ -772,19 +678,10 @@ int main(void)
   oledTaskHandle = osThreadNew(StartOledTask, NULL, &oledTask_attributes);
 
   /* creation of sensorTask */
-  sensorTaskHandle = osThreadNew(StartUltraSonic, NULL, &sensorTask_attributes);
-
-  /* creation of servoTask */
- // servoTaskHandle = osThreadNew(StartServoTask, NULL, &servoTask_attributes);
-
-  /* creation of motorTask */
-  //motorTaskHandle = osThreadNew(StartMotorTask, NULL, &motorTask_attributes);
+  sensorTaskHandle = osThreadNew(Startsensor, NULL, &sensorTask_attributes);
 
   /* creation of encoderTask */
   encoderTaskHandle = osThreadNew(StartEncoderTask, NULL, &encoderTask_attributes);
-
-  /* creation of IRTask */
- // IRTaskHandle = osThreadNew(Start_IRTask, NULL, &IRTask_attributes);
 
   /* creation of robotTask */
   robotTaskHandle = osThreadNew(startrobotTask, NULL, &robotTask_attributes);
@@ -1478,23 +1375,6 @@ void IR_Right_Read() {
 	iDistanceR=(int)(iDistanceR*-4.286e-03)+2.189e+01;
 }
 
-void Move_Left(){
-	filtered_gyro=0;
-	last_raw=0;
-	set_servo_angle(Left);
-	osDelay(1000);
-	PID_Control(1,10);
-
-}
-void Move_Right(){
-	filtered_gyro=0;
-	last_raw=0;
-	reset_hpf=0;
-	set_servo_angle(Right);
-	osDelay(1000);
-	PID_Control(10,1);
-}
-
 void Motor_Stop()
 {
 	  PID_Reset(&LMotorPID);
@@ -1509,24 +1389,6 @@ void Motor_Stop()
 	osDelay(1000);
 	//reset_gyro_at_rest();
   //  count++;
-}
-
-void Move_Straight(){
-	degree=0;
-	filtered_gyro=0;
-	last_raw=0;
-    // Set PWM duty cycle for both motors
-	Set_Motor_Direction(1);
-	PID_Control(5,5);
-}
-void Move_Backwards(){
-	degree=0;
-	filtered_gyro=0;
-	last_raw=0;
-	Set_Motor_Direction(0);
-    // Set PWM duty cycle for both motors
-	PID_Control(5,5);
-
 }
 void Calibrate()
  {
@@ -1555,37 +1417,6 @@ void StartDefaultTask(void *argument)
   for(;;)
   {
 	  	  HAL_GPIO_TogglePin(GPIOE,LED3_Pin);
-	  	/*char text[15];
-		ICM20948_readGyroscope_all(&hi2c1, 0, GYRO_SENS,&accel);
-		snprintf(text, sizeof(text), "X:%5.2f", accel.x);
-		OLED_ShowString(10, 10, text);
-		snprintf(text, sizeof(text), "Y:%5.2f", accel.y);
-		OLED_ShowString(10, 20, text);
-		snprintf(text, sizeof(text), "Z:%5.2f", accel.z);
-		OLED_ShowString(10, 30, text);
-		OLED_Refresh_Gram();
-		HAL_GPIO_TogglePin(GPIOE,LED3_Pin);
-		osDelay(100);*/
-/*if (angle > 250 || angle < 70 )
-	angle =150;
-
-	  htim1.Instance->CCR4 = angle;
-*/
-	  /*
-  HAL_GPIO_WritePin(GPIOE, TRIG_Pin,GPIO_PIN_RESET);
-  HAL_GPIO_WritePin(GPIOE, TRIG_Pin,GPIO_PIN_SET);
-  delay_us(10);
-  HAL_GPIO_WritePin(GPIOE, TRIG_Pin,GPIO_PIN_RESET);
-
-  float dist = echo/10000.0f *343.0f/2.0f; //echo/1000000.0f *343.0f/2.0f *100.0f equivalent*/
-	 // uint8_t ch = 'A';
-	//	  HAL_UART_Transmit(&huart3,(uint8_t *)&ch,1,0xFFFF);
-		  //uint8_t test[15] = "Test String\0";
-		  //sprintf(test,"%s\0",aRxBuffer);
-//		  snprintf(test,15,"dist: %3.2f cm\0",dist);
-//		  OLED_ShowString(10,10,test);
-//
-//		  OLED_Refresh_Gram();
     osDelay(150);
 
   }
@@ -1615,304 +1446,46 @@ void StartOledTask(void *argument)
   /* Infinite loop */
   for(;;)
   {
-
-//
-		 //char buf[5];
 		snprintf(text, sizeof(text), "EA:%f", distanceTraveled);
 		OLED_ShowString(10, 40, text);
-//		  snprintf(text, sizeof(text), "X:%d", flagReceived);
 		snprintf(text, sizeof(text), "Distance:%.2f", g_distanceUS);
 		  OLED_ShowString(10, 20, text);
-		//		  snprintf(text, sizeof(text), "X:%d", flagReceived);
-		//		  OLED_ShowString(10, 50, text);
-//		  snprintf(text, sizeof(text), "PWM:%c", aRxBuffer[0]);
-//		  OLED_ShowString(10, 20, text);
-
-
 		  snprintf(text, sizeof(text), "degree :%5.2f", yaw);//BEFORE DEGREE
 		  OLED_ShowString(10, 30, text);
 		  OLED_Refresh_Gram();
-		  //snprintf(text, sizeof(text), "A:%d", angle);
 		  snprintf(text, sizeof(text), "Distance: %d m", Target_Distance);
 		  OLED_ShowString(10, 10, text);
-
-
-//		  Set_Motor_Direction(1);
-//		  int LPwm=(int32_t)PID_Update(&LMotorPID, RPS_L);
-//		  int RPwm=(int32_t)PID_Update(&RMotorPID, RPS_R);
-//		 //set_motor_pwm(LPwm, RPwm);
-//
-//		  if(LMotorPID.setpoint !=0 && RMotorPID.setpoint !=0)
-//			  set_motor_pwm(LPwm, RPwm);
-
- //snprintf(temp,sizeof(temp),"%.5f,%.5f,%.2f,%d\r\n",RPS_L,RPS_R,LMotorPID.setpoint,pwmValL);
 		  snprintf(temp,sizeof(temp),"%.5f\r\n",yaw);
 
-		// HAL_UART_Transmit_IT(&huart3,(uint8_t*) temp, strlen(temp));
-//	  ICM20948_readAccelerometer_all(&hi2c1,0,ACCEL_SENS,&accel);
-	  /*snprintf(text, sizeof(text), "X:%5.2f", 2.5);
-	  OLED_ShowString(10, 10, text);*/
-
-	  //ICM20948_readMagnetometer_all(&hi2c1,&accel);
-//	  ShowMagDataOled(&accel);
-//	  magcal_adjust(&accel,&mag_params);
-
-//	 			 snprintf(text, sizeof(text), "H:%5.2f",fmod((atan2(-accel.y, accel.x) * (180.0f / M_PI) + 360), 360));
-//	 			 OLED_ShowString(10, 50, text);
-
-//	  snprintf(text, sizeof(text), "Dist:%5.1fcm", g_distanceUS);
-//	  OLED_ShowString(10, 10, text);
-//
-//	  snprintf(text, sizeof(text), "RPM:%5.2fRPM", RPM_R);
-//	  	  OLED_ShowString(10, 20, text);
-
-/*
-	  snprintf(text, sizeof(text), "Yaw:%5.2f", yaw);
-	  OLED_ShowString(10, 20, text);
-	  snprintf(text, sizeof(text), "Pitch:%5.2f", pitch);
-	  	  OLED_ShowString(10, 30, text);
-	  	snprintf(text, sizeof(text), "Roll:%5.2f", roll);
-	  		  OLED_ShowString(10, 40, text);*/
-	 //OLED_Refresh_Gram();
-	  //HAL_UART_Transmit(&huart2,text,sizeof(text),0xFFFF);
-	  //HAL_UART_Transmit(&huart2,"\n\r",2,0xFFFF);
     osDelay(200);
   }
   /* USER CODE END StartOledTask */
 }
 
-/* USER CODE BEGIN Header_StartUltraSonic */
+/* USER CODE BEGIN Header_Startsensor */
 /**
-* @brief Function implementing the ultraSonicTask thread.
+* @brief Function implementing the sensorTask thread.
 * @param argument: Not used
 * @retval None
 */
-/* USER CODE END Header_StartUltraSonic */
-void StartUltraSonic(void *argument)
+/* USER CODE END Header_Startsensor */
+void Startsensor(void *argument)
 {
-  /* USER CODE BEGIN StartUltraSonic */
-	HAL_GPIO_WritePin(GPIOE, TRIG_Pin,GPIO_PIN_RESET);
+  /* USER CODE BEGIN Startsensor */
   /* Infinite loop */
+	HAL_GPIO_WritePin(GPIOE, TRIG_Pin,GPIO_PIN_RESET);
   for(;;)
   {
-	    HAL_GPIO_WritePin(GPIOE, TRIG_Pin,GPIO_PIN_SET);
-	    delay_us(10);
-	    HAL_GPIO_WritePin(GPIOE, TRIG_Pin,GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(GPIOE, TRIG_Pin,GPIO_PIN_SET);
+	delay_us(10);
+	HAL_GPIO_WritePin(GPIOE, TRIG_Pin,GPIO_PIN_RESET);
 	    //g_distanceUS = (tc2 > tc1 ? (tc2 - tc1) : (65535 - tc1 + tc2)) * 0.034 / 2; //echo/1000000.0f *343.0f/2.0f *100.0f equivalent
-    osDelay(10);
+	osDelay(10);
 	IR_Left_Read();
 	IR_Right_Read();
 	osDelay(100);
   }
-  /* USER CODE END StartUltraSonic */
-}
-
-/* USER CODE BEGIN Header_StartServoTask */
-/**
-* @brief Function implementing the servoTask thread.
-* @param argument: Not used
-* @retval None
-*/
-/* USER CODE END Header_StartServoTask */
-void StartServoTask(void *argument)
-{
-  /* USER CODE BEGIN StartServoTask */
-
-	HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_4);//Start servo pwm timer
-	degree=0;
-	osDelay(200);
-	//Calibrate();
-	start_time = HAL_GetTick();
-	end_time = HAL_GetTick();  // Record end time
-	delta_time_sec= (end_time - start_time) * 0.001f; // Time difference in ms
-  /* Infinite loop */
-  for(;;)
-  {
-		ICM20948_readGyroscope_all(&hi2c1, 0, GYRO_SENS, &accel);
-		end_time = HAL_GetTick();
-		delta_time_sec= (end_time - start_time) * 0.001f;
-		 float filtered_gyro_value = high_pass_filter(accel.z, alpha);
-		  degree+=filtered_gyro_value * delta_time_sec; //accel.z
-		  error_angle=Center-(int)degree;
-		  if(aRxBuffer[0]=='W')
-		  {
-			  if(error_angle>(Center+.2)) //(error_angle>(Center+.5))
-			  {
-				  //set_servo_pwm(146);//turn slght left 146
-				  set_servo_angle(Slight_Left);
-			  }
-			  else if(error_angle<(Center-.2))
-			  {
-				  //set_servo_pwm(160); //turn slight right 160
-				  set_servo_angle(Slight_Right);
-			  }
-			  else{
-				  //set_servo_pwm(152);
-				  set_servo_angle(Center);
-			  }
-		  }
-		  else if(aRxBuffer[0]=='S')
-		  {
-			  if(error_angle<(Center-.2)) //(error_angle>(Center+.5))
-			  {
-				  //set_servo_pwm(146);//turn slght left 146
-				  set_servo_angle(Slight_Left);
-			  }
-			  else if(error_angle>(Center+.2))
-			  {
-				  //set_servo_pwm(160); //turn slight right 160
-				  set_servo_angle(Slight_Right);
-			  }
-			  else{
-				  //set_servo_pwm(152);
-				  set_servo_angle(Center);
-			  }
-		  }
-		  start_time = HAL_GetTick();
-		    osDelay(100);
-	  }
-//	  else{
-//
-//	  }
-
-
-  }
-//}
-
-  /* USER CODE END StartServoTask */
-
-/* USER CODE BEGIN Header_StartMotorTask */
-/**
-* @brief Function implementing the motorTask thread.
-* @param argument: Not used
-* @retval None
-*/
-/* USER CODE END Header_StartMotorTask */
-void StartMotorTask(void *argument)
-{
-  /* USER CODE BEGIN StartMotorTask */
-	HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_1);
-	HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_2);
-	while(HAL_GPIO_ReadPin(GPIOD, GPIO_PIN_8)==1);
-	//while(calibrate==0);
-	set_servo_angle(Center);
-	//Target_Distance=200;
-  /* Infinite loop */
-  for(;;)
-  {
-
-//	  if(count==0)
-//	  {
-//		  Move_Left(27);
-//	  }
-//	  if(count==0)
-//	  {
-//		  Move_Right(40);
-//	  } //70 is for left //140 for right
-//	  if(count==4)
-//	  {//for reverse left / right swap the function call and its fine and -5
-//		  if(error_angle<135) // Move left 135 for 90 degree //180 for 180 degree 175 works too
-//			  // do increments of 45 for each 90 degree
-//		  {
-//			Set_Motor_Direction(1);
-//			  Move_Right();
-//		  }
-//		  		else{
-//		  			Motor_Stop();
-//		  		}
-//	  }
-//	  if(count==0)
-//	  {//for reverse left / right swap the function call and its fine
-//		  if(error_angle>55) // Move left 135 for 90 degree //180 for 180 degree 175 works too
-//			  // do increments of 45 for each 90 degree
-//		  {
-//
-//			  Move_Left();
-//		  }
-//		  		else{
-//		  			Motor_Stop();
-//		  		}
-//	  }
-
-//	  if(count==2)
-//	  {
-//		  if(error_angle>55) // Move left 55 for 90 degree //correct one forward
-//		  {
-//			  Move_Left();
-//		  }
-//		  		else{
-//		  			Motor_Stop();
-//		  		}
-//	  }
-
-//	  if(distanceTraveled<Target_Distance)// Do not touch
-//	  {
-//		  if(count==1)
-//		  {
-//			  Move_Straight();
-//		  }
-//		  if(count==5)
-//		  {
-//			  Move_Backwards();
-//		  }
-//
-//		}
-	  if(flagReceived==1&&flagDone!=1){
-
-			if(aRxBuffer[0]=='W' && distanceTraveled < Target_Distance){
-				  Move_Straight();
-			}
-			else if(aRxBuffer[0]=='D'&&aRxBuffer[1]=='1'&&error_angle<135){
-						Set_Motor_Direction(1);
-						Move_Right();
-			}
-			else if(aRxBuffer[0]=='D'&&aRxBuffer[1]=='0'&&error_angle>55){
-						Set_Motor_Direction(0);
-						Move_Right();
-			}
-			else if(aRxBuffer[0]=='A' &&aRxBuffer[1]=='1'&&error_angle>55){
-						Set_Motor_Direction(1);
-						Move_Left();
-					}
-			else if(aRxBuffer[0]=='A'&&aRxBuffer[1]=='0'&&error_angle<135){
-						Set_Motor_Direction(0);
-						Move_Left();
-			}
-			else if(aRxBuffer[0]=='S' && distanceTraveled < Target_Distance)
-			{
-					Set_Motor_Direction(0);
-					Backward(0);
-			}
-			else{
-				flagDone=1;
-				flagReceived=0;
-			}
-		}
-		else if(flagDone==1)
-		{
-			Motor_Stop();
-			HAL_UART_Transmit(&huart3,(uint8_t *)"D",1,0xFFFF);
-			flagReceived=0;
-			flagDone = 0;
-		}
-	    osDelay(50); // Delay to control update frequency
-//	  	if(g_distanceUS<20)
-//	  	{
-//	  		Motor_Stop();
-//	  	}
-  	  }
-	    /*
-	  Set_Motor_Direction(0);
-	  while(pwmValL>0){
-	 		  pwmValL--;
-	 		  pwmValR--;
-
-	 	  __HAL_TIM_SetCompare(&htim8,TIM_CHANNEL_1,pwmValL);
-	 	  __HAL_TIM_SetCompare(&htim8,TIM_CHANNEL_2,pwmValR);
-	 	  osDelay(10);
-	 	  }*/
-	  //__HAL_TIM_SetCompare(&htim8,TIM_CHANNEL_1,0);
-  /* USER CODE END StartMotorTask */
+  /* USER CODE END Startsensor */
 }
 
 /* USER CODE BEGIN Header_StartEncoderTask */
@@ -1977,26 +1550,6 @@ void StartEncoderTask(void *argument)
 	  osDelay(150);
   }
   /* USER CODE END StartEncoderTask */
-}
-
-/* USER CODE BEGIN Header_Start_IRTask */
-/**
-* @brief Function implementing the IRTask thread.
-* @param argument: Not used
-* @retval None
-*/
-/* USER CODE END Header_Start_IRTask */
-void Start_IRTask(void *argument)
-{
-  /* USER CODE BEGIN Start_IRTask */
-  /* Infinite loop */
-  for(;;)
-  {
-		IR_Left_Read();
-		IR_Right_Read();
-		osDelay(150);
-  }
-  /* USER CODE END Start_IRTask */
 }
 
 /* USER CODE BEGIN Header_startrobotTask */
@@ -2073,43 +1626,6 @@ void startrobotTask(void *argument)
 	  	  	ICM20948_readGyroscope_all(&hi2c1, 0, GYRO_SENS, &accel);
 	  		end_time = HAL_GetTick();
 	  		delta_time_sec= (end_time - start_time) * 0.001f;
-	  		 float filtered_gyro_value = high_pass_filter(accel.z, alpha);
-	  		  degree+=filtered_gyro_value * delta_time_sec; //accel.z
-	  		  error_angle=Center-(int)degree;
-//	  		  if(aRxBuffer[0]=='W')
-//	  		  {
-//	  			  if(error_angle>(Center+.2)) //(error_angle>(Center+.5))
-//	  			  {
-//	  				  //set_servo_pwm(146);//turn slght left 146
-//	  				  set_servo_angle(Slight_Left);
-//	  			  }
-//	  			  else if(error_angle<(Center-.2))
-//	  			  {
-//	  				  //set_servo_pwm(160); //turn slight right 160
-//	  				  set_servo_angle(Slight_Right);
-//	  			  }
-//	  			  else{
-//	  				  //set_servo_pwm(152);
-//	  				  set_servo_angle(Center);
-//	  			  }
-//	  		  }
-//	  		  else if(aRxBuffer[0]=='S')
-//	  		  {
-//	  			  if(error_angle<(Center-.2)) //(error_angle>(Center+.5))
-//	  			  {
-//	  				  //set_servo_pwm(146);//turn slght left 146
-//	  				  set_servo_angle(Slight_Left);
-//	  			  }
-//	  			  else if(error_angle>(Center+.2))
-//	  			  {
-//	  				  //set_servo_pwm(160); //turn slight right 160
-//	  				  set_servo_angle(Slight_Right);
-//	  			  }
-//	  			  else{
-//	  				  //set_servo_pwm(152);
-//	  				  set_servo_angle(Center);
-//	  			  }
-//	  		  }
 	  		  start_time = HAL_GetTick();
 	  		  if(flagReceived==1&&flagDone!=1){
 	  			  char temp[4] = {0};  // Temporary buffer to hold up to 4 characters + null terminator
@@ -2122,7 +1638,6 @@ void startrobotTask(void *argument)
 	  				}
 	  				else if(aRxBuffer[0]=='D'&&aRxBuffer[1]=='1'){
 	  							Set_Motor_Direction(1);
-	  							//Move_Right();
 	  							ForwardRight(-87);
 	  				}
 	  				else if(aRxBuffer[0]=='D'&&aRxBuffer[1]=='0'){
