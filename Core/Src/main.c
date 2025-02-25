@@ -122,7 +122,7 @@ const osThreadAttr_t robotTask_attributes = {
 /* USER CODE BEGIN PV */
 //Ultrasonic
 int tc1=0,tc2=0,echo=0;
-float g_distanceUS=0;//ultrasonic distance
+float g_distanceUS=0,last_valid=0;//ultrasonic distance
 double RPM_L=0,RPM_R=0;//Encoder
 
 double RPS_L=0,RPS_R=0;
@@ -235,7 +235,7 @@ void Backward(int target)
 	//int target=-85;//90
 	//int target=25;//360
 	static uint8_t bTurn=1;
-	if(bTurn&& target != 0)
+	if(bTurn&& target == 0)
 	{
 		set_servo_angle(Center);
 		osDelay(750);
@@ -247,11 +247,11 @@ void Backward(int target)
 	LMotorPID.setpoint=2;
 	RMotorPID.setpoint=2;
 
-	if (yaw > target - 2.0f )
+	if (yaw > target - 1.0f )
 			  {
 				  set_servo_angle(Slight_Left);
 			  }
-	else if(yaw < target + 2.0f)
+	else if(yaw < target + 1.0f)
 	{
 		set_servo_angle(Slight_Right);
 	}
@@ -272,7 +272,7 @@ void Forward(int target)
 	//int target=-85;//90
 	//int target=25;//360
 	static uint8_t bTurn=1;
-	if(bTurn&& target != 0)
+	if(bTurn&&target==0)
 	{
 		set_servo_angle(Center);
 		osDelay(750);
@@ -284,11 +284,11 @@ void Forward(int target)
 	LMotorPID.setpoint=2;
 	RMotorPID.setpoint=2;
 
-	if (yaw > target - 2.0f )
+	if (yaw > target - 1.0f )
 			  {
 				  set_servo_angle(Slight_Right);
 			  }
-	else if(yaw < target + 2.0f)
+	else if(yaw < target + 1.0f)
 	{
 		set_servo_angle(Slight_Left);
 	}
@@ -1332,8 +1332,13 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef * huart)
 		HAL_UART_Transmit(&huart3, (uint8_t*)buf,5,0XFFFF);
 	    }
 	//HAL_UART_Transmit(&huart3,(uint8_t *)aRxBuffer,4,0xFFFF);
-	flagReceived=1;
-	 HAL_UART_Receive_IT(&huart3,(uint8_t *)aRxBuffer,RECEIVE_BUFFER_SIZE);
+	 if(flagReceived !=1){
+			flagReceived=1;
+			 HAL_UART_Receive_IT(&huart3,(uint8_t *)aRxBuffer,RECEIVE_BUFFER_SIZE);
+	 }
+	 else{
+
+	 }
 	// servo_pwm  = atoi(aRxBuffer);
 	//memset(aRxBuffer,0,sizeof(aRxBuffer));
 
@@ -1356,6 +1361,13 @@ if(htim==&htim4)
 		else //tc2 overflow
 			echo=((65536-tc1)+tc2);
 	}g_distanceUS = (tc2 > tc1 ? (tc2 - tc1) : (65535 - tc1 + tc2)) * 0.034 / 2;
+	if(g_distanceUS>400)
+	{
+		g_distanceUS=last_valid;
+	}
+	else{
+		last_valid=g_distanceUS;
+	}
 }
 
 }
@@ -1364,6 +1376,10 @@ void IR_Left_Read() {
 	HAL_ADC_PollForConversion(&hadc2, 10);
 	iDistanceL = HAL_ADC_GetValue(&hadc2);
 	HAL_ADC_Stop(&hadc2);
+
+//	filtered_irreading = (FILTER_ALPHA2 * iDistanceL) + ((1 - FILTER_ALPHA2) * filtered_irreading);
+//	filtered_irreading_int = (int) filtered_irreading;
+	//iDistanceL=(int)pow(10, -1.754*(log10((float) iDistanceL))+7.064);
 	iDistanceL=(int)(iDistanceL*-4.286e-03)+2.189e+01;
 }
 
@@ -1377,6 +1393,7 @@ void IR_Right_Read() {
 
 void Motor_Stop()
 {
+	resetYaw();
 	  PID_Reset(&LMotorPID);
 	  PID_Reset(&RMotorPID);
 	degree=0;
@@ -1446,7 +1463,7 @@ void StartOledTask(void *argument)
   /* Infinite loop */
   for(;;)
   {
-		snprintf(text, sizeof(text), "EA:%f", distanceTraveled);
+		snprintf(text, sizeof(text), "DistanceIRR:%d m", iDistanceR);
 		OLED_ShowString(10, 40, text);
 		snprintf(text, sizeof(text), "Distance:%.2f", g_distanceUS);
 		  OLED_ShowString(10, 20, text);
@@ -1455,6 +1472,8 @@ void StartOledTask(void *argument)
 		  OLED_Refresh_Gram();
 		  snprintf(text, sizeof(text), "Distance: %d m", Target_Distance);
 		  OLED_ShowString(10, 10, text);
+		  snprintf(text, sizeof(text), "DistanceIRL: %d m", iDistanceL);
+		  OLED_ShowString(10, 50, text);
 		  snprintf(temp,sizeof(temp),"%.5f\r\n",yaw);
 
     osDelay(200);
@@ -1646,7 +1665,7 @@ void startrobotTask(void *argument)
 	  				}
 	  				else if(aRxBuffer[0]=='A' &&aRxBuffer[1]=='1'){
 	  							Set_Motor_Direction(1);
-	  							ForwardLeft(85);
+	  							ForwardLeft(87);
 	  						}
 	  				else if(aRxBuffer[0]=='A'&&aRxBuffer[1]=='0'){
 	  							Set_Motor_Direction(0);
