@@ -54,6 +54,7 @@ float delta_time_sec=0;
 float gyro_offset = 0.0;
 float current_gyro_reading = 0.0;
 int calibrate,flagDone=0,flagReceived=0;
+int count=0;
 uint32_t start_time, end_time;
 
 //#define Debug
@@ -188,14 +189,24 @@ uint8_t buf[5]={0};
 
 //SET both wheel direction
 void Set_Motor_Direction(int foward_flag) {
-    HAL_GPIO_WritePin(GPIOA, AIN1_Pin,
+    HAL_GPIO_WritePin(GPIOA, AIN1_Pin, //AIn1 is forward AIn2 is backward
             ((foward_flag) ? GPIO_PIN_SET : GPIO_PIN_RESET));
     HAL_GPIO_WritePin(GPIOA, AIN2_Pin,
             ((foward_flag) ? GPIO_PIN_RESET : GPIO_PIN_SET));
-    HAL_GPIO_WritePin(GPIOA, BIN2_Pin,
+    HAL_GPIO_WritePin(GPIOA, BIN2_Pin, //BIn1 is forward BIn2 is backward
             ((foward_flag) ? GPIO_PIN_RESET : GPIO_PIN_SET));
     HAL_GPIO_WritePin(GPIOA, BIN1_Pin,
             ((foward_flag) ? GPIO_PIN_SET : GPIO_PIN_RESET));
+}
+void Set_Motor_DirectionTest(int foward_flag,int backward_flag) {
+    HAL_GPIO_WritePin(GPIOA, AIN1_Pin, //AIn1 is forward AIn2 is backward
+            ((foward_flag) ? GPIO_PIN_SET : GPIO_PIN_RESET));
+    HAL_GPIO_WritePin(GPIOA, AIN2_Pin,
+            ((foward_flag) ? GPIO_PIN_RESET : GPIO_PIN_SET));
+    HAL_GPIO_WritePin(GPIOA, BIN2_Pin, //BIn1 is forward BIn2 is backward
+            ((backward_flag) ? GPIO_PIN_RESET : GPIO_PIN_SET));
+    HAL_GPIO_WritePin(GPIOA, BIN1_Pin,
+            ((backward_flag) ? GPIO_PIN_SET : GPIO_PIN_RESET));
 }
 void delay_us(uint16_t us)
 {
@@ -285,9 +296,9 @@ void Forward(int target)
 	RMotorPID.setpoint=2;
 
 	if (yaw > target - 1.0f )
-			  {
-				  set_servo_angle(Slight_Right);
-			  }
+	  {
+		  set_servo_angle(Slight_Right);
+	  }
 	else if(yaw < target + 1.0f)
 	{
 		set_servo_angle(Slight_Left);
@@ -317,8 +328,8 @@ void ForwardLeft(int target)
 		}
 	updateYaw();
 
-	LMotorPID.setpoint=0.7;
-	RMotorPID.setpoint=1;
+	LMotorPID.setpoint=0.5;
+	RMotorPID.setpoint=2.5;
 
 	if (yaw > target - 2.0f && yaw < target + 2.0f)
 			  {
@@ -333,8 +344,164 @@ void ForwardLeft(int target)
 			  }
 	else if (yaw > target - 20.0f && yaw < target + 20.0f)
 	{
-	  LMotorPID.setpoint=0.35;
+	  LMotorPID.setpoint=0.1;
 	  RMotorPID.setpoint=0.5;
+	}
+	int32_t L=(int32_t)PID_Update(&LMotorPID, RPS_L);
+	int32_t R=(int32_t)PID_Update(&RMotorPID, RPS_R);
+	set_motor_pwm(L, R);
+}
+void BackRightTest(int target)
+{
+
+	//Ensure yaw is reseted before turning
+	//int target=-85;//90
+	//int target=25;//360
+	static uint8_t bTurn=1;
+	if(bTurn&& target != 0)
+	{
+		set_servo_angle(Right);
+		osDelay(750);
+		resetYaw();
+		bTurn=0;
+	}
+	updateYaw();
+	//osDelay(10);
+	LMotorPID.setpoint=4;
+	RMotorPID.setpoint=0.5;
+
+	if (yaw > target - 2.0f && yaw < target + 2.0f)
+			  {
+				  set_motor_pwm(0, 0);
+				  PID_Reset(&LMotorPID);
+				  PID_Reset(&RMotorPID);
+				  set_servo_angle(Center);
+				  bTurn=1;
+				  flagDone=1;
+				  tempflag=0;
+				  return;
+			  }
+	else if (yaw > target - 25.0f && yaw < target + 25.0f)
+	{
+	  LMotorPID.setpoint=0.5;
+	  RMotorPID.setpoint=0.5;//0.35
+	}
+	int32_t L=(int32_t)PID_Update(&LMotorPID, RPS_L);
+	int32_t R=(int32_t)PID_Update(&RMotorPID, RPS_R);
+	set_motor_pwm(L, R);
+}
+void BackLeftTest(int target)
+{
+
+	//Ensure yaw is reseted before turning
+	//int target=-85;//90
+	//int target=25;//360
+	static uint8_t bTurn=1;
+	if(bTurn&& target != 0)
+	{
+		set_servo_angle(Left);
+		osDelay(750);
+		resetYaw();
+		bTurn=0;
+	}
+	updateYaw();
+	//osDelay(10);
+	LMotorPID.setpoint=0.5;
+	RMotorPID.setpoint=4;
+
+	if (yaw > target - 2.0f && yaw < target + 2.0f)
+			  {
+				  set_motor_pwm(0, 0);
+				  PID_Reset(&LMotorPID);
+				  PID_Reset(&RMotorPID);
+				  set_servo_angle(Center);
+				  bTurn=1;
+				  flagDone=1;
+				  tempflag=0;
+				  return;
+			  }
+	else if (yaw > target - 25.0f && yaw < target + 25.0f)
+	{
+	  LMotorPID.setpoint=0.5;
+	  RMotorPID.setpoint=0.5;//0.35
+	}
+	int32_t L=(int32_t)PID_Update(&LMotorPID, RPS_L);
+	int32_t R=(int32_t)PID_Update(&RMotorPID, RPS_R);
+	set_motor_pwm(L, R);
+}
+void ForwardLeftTest(int target)
+{
+
+	//Ensure yaw is reseted before turning
+	//int target=-85;//90
+	//int target=25;//360
+	static uint8_t bTurn=1;
+	if(bTurn&& target != 0)
+	{
+		set_servo_angle(Left);
+		osDelay(750);
+		resetYaw();
+		bTurn=0;
+	}
+	updateYaw();
+	//osDelay(10);
+	LMotorPID.setpoint=0.5;
+	RMotorPID.setpoint=4;
+
+	if (yaw > target - 2.0f && yaw < target + 2.0f)
+			  {
+				  set_motor_pwm(0, 0);
+				  PID_Reset(&LMotorPID);
+				  PID_Reset(&RMotorPID);
+				  set_servo_angle(Center);
+				  bTurn=1;
+				  flagDone=1;
+				  tempflag=0;
+				  return;
+			  }
+	else if (yaw > target - 25.0f && yaw < target + 25.0f)
+	{
+	  LMotorPID.setpoint=0.5;
+	  RMotorPID.setpoint=0.5;//0.35
+	}
+	int32_t L=(int32_t)PID_Update(&LMotorPID, RPS_L);
+	int32_t R=(int32_t)PID_Update(&RMotorPID, RPS_R);
+	set_motor_pwm(L, R);
+}
+void ForwardRightTest(int target)
+{
+
+	//Ensure yaw is reseted before turning
+	//int target=-85;//90
+	//int target=25;//360
+	static uint8_t bTurn=1;
+	if(bTurn&& target != 0)
+	{
+		set_servo_angle(Right);
+		osDelay(750);
+		resetYaw();
+		bTurn=0;
+	}
+	updateYaw();
+	//osDelay(10);
+	LMotorPID.setpoint=4;
+	RMotorPID.setpoint=0.5;
+
+	if (yaw > target - 2.0f && yaw < target + 2.0f)
+			  {
+				  set_motor_pwm(0, 0);
+				  PID_Reset(&LMotorPID);
+				  PID_Reset(&RMotorPID);
+				  set_servo_angle(Center);
+				  bTurn=1;
+				  flagDone=1;
+				  tempflag=0;
+				  return;
+			  }
+	else if (yaw > target - 25.0f && yaw < target + 25.0f)
+	{
+	  LMotorPID.setpoint=0.5;
+	  RMotorPID.setpoint=0.5;//0.35
 	}
 	int32_t L=(int32_t)PID_Update(&LMotorPID, RPS_L);
 	int32_t R=(int32_t)PID_Update(&RMotorPID, RPS_R);
@@ -356,8 +523,8 @@ void ForwardRight(int target)
 	}
 	updateYaw();
 	//osDelay(10);
-	LMotorPID.setpoint=1;
-	RMotorPID.setpoint=0.7;
+	LMotorPID.setpoint=2.5;
+	RMotorPID.setpoint=0.5;
 
 	if (yaw > target - 2.0f && yaw < target + 2.0f)
 			  {
@@ -373,7 +540,7 @@ void ForwardRight(int target)
 	else if (yaw > target - 20.0f && yaw < target + 20.0f)
 	{
 	  LMotorPID.setpoint=0.5;
-	  RMotorPID.setpoint=0.35;
+	  RMotorPID.setpoint=0.1;//0.35
 	}
 	int32_t L=(int32_t)PID_Update(&LMotorPID, RPS_L);
 	int32_t R=(int32_t)PID_Update(&RMotorPID, RPS_R);
@@ -394,8 +561,8 @@ void BackLeft(int target)
 		}
 	updateYaw();
 
-	LMotorPID.setpoint=0.7;
-	RMotorPID.setpoint=1;
+	LMotorPID.setpoint=0.5;
+	RMotorPID.setpoint=2.5;
 
 	if (yaw > target - 2.0f && yaw < target + 2.0f)
 			  {
@@ -410,7 +577,7 @@ void BackLeft(int target)
 			  }
 	else if (yaw > target - 20.0f && yaw < target + 20.0f)
 	{
-	  LMotorPID.setpoint=0.35;
+	  LMotorPID.setpoint=0.1;
 	  RMotorPID.setpoint=0.5;
 	}
 	int32_t L=(int32_t)PID_Update(&LMotorPID, RPS_L);
@@ -433,8 +600,8 @@ void BackRight(int target)
 	}
 	updateYaw();
 	//osDelay(10);
-	LMotorPID.setpoint=1;
-	RMotorPID.setpoint=0.7;
+	LMotorPID.setpoint=2.5;
+	RMotorPID.setpoint=0.5;
 
 	if (yaw > target - 2.0f && yaw < target + 2.0f)
 			  {
@@ -450,7 +617,7 @@ void BackRight(int target)
 	else if (yaw > target - 20.0f && yaw < target + 20.0f)
 	{
 	  LMotorPID.setpoint=0.5;
-	  RMotorPID.setpoint=0.35;
+	  RMotorPID.setpoint=0.1;
 	}
 	int32_t L=(int32_t)PID_Update(&LMotorPID, RPS_L);
 	int32_t R=(int32_t)PID_Update(&RMotorPID, RPS_R);
@@ -1407,17 +1574,6 @@ void Motor_Stop()
 	//reset_gyro_at_rest();
   //  count++;
 }
-void Calibrate()
- {
-
- 	set_servo_angle(Right);
- 	osDelay(1000);
- 	set_servo_angle(Left);
- 	osDelay(1000);
- 	set_servo_angle(Center);
- 	osDelay(1000);
- 	calibrate=1;
- }
 /* USER CODE END 4 */
 
 /* USER CODE BEGIN Header_StartDefaultTask */
@@ -1592,6 +1748,7 @@ void startrobotTask(void *argument)
 
 		//{osDelay(200);osThreadYield();}
 	//while(calibrate==0);
+
 	set_servo_angle(Center);
 	osDelay(200);
 	//Calibrate();
@@ -1609,13 +1766,44 @@ void startrobotTask(void *argument)
 			  //resetYaw();
 			  //yaw=0;
 			  tempflag=1;
+
 			  //target=85;
 			  //set_servo_angle(Right);
-			  Set_Motor_Direction(0);
-			  osDelay(550);
+
+			 // osDelay(550);
 		  }
+
 		  if(tempflag==1)
 			  {
+//				  if(distanceTraveled < 180)
+//				  {
+//					  Forward(0);
+//				  }
+//				  else
+//				  {
+//					  if(count==0)
+//					  {
+//						  Motor_Stop();
+//						  distanceTraveled =190;
+//						  count++;
+//					  }
+//					  else{
+//						  Set_Motor_DirectionTest(1,0);
+//						  ForwardRightTest(-83);
+//					  }
+//				  }
+
+				Set_Motor_DirectionTest(1,0);
+//				BackRightTest(83);
+				ForwardRightTest(-83);
+
+			  			  			  //Set_Motor_DirectionTest(0,1);
+			  			  			  //BackRightTest(83);
+			  			  			  //BackLeftTest(-83);
+			  			  			 // ForwardLeftTest(83);
+//			  			  Set_Motor_DirectionTest(1,0);
+//			  			  ForwardRightTest(-83);
+			  				//ForwardRight(-84);
 			  //int target=-25;
 			  //ForwardRight(-target);
 			  //BackRight(85);
@@ -1649,27 +1837,26 @@ void startrobotTask(void *argument)
 	  		  if(flagReceived==1&&flagDone!=1){
 	  			  char temp[4] = {0};  // Temporary buffer to hold up to 4 characters + null terminator
 	  			  strncpy(temp, aRxBuffer+1, 3);
-	  			  temp[4]='\0';
 	  			  Target_Distance=atoi(temp);
 	  				if(aRxBuffer[0]=='W' && distanceTraveled < Target_Distance){
-	  					Set_Motor_Direction(1);
+	  					Set_Motor_DirectionTest(1,1);
 	  					Forward(0);
 	  				}
 	  				else if(aRxBuffer[0]=='D'&&aRxBuffer[1]=='1'){
-	  							Set_Motor_Direction(1);
-	  							ForwardRight(-87);
+	  							Set_Motor_DirectionTest(1,0);
+	  							ForwardRightTest(-83);
 	  				}
 	  				else if(aRxBuffer[0]=='D'&&aRxBuffer[1]=='0'){
-	  							Set_Motor_Direction(0);
-	  							BackRight(85);
+	  							Set_Motor_DirectionTest(0,1);
+	  							BackRightTest(83);
 	  				}
 	  				else if(aRxBuffer[0]=='A' &&aRxBuffer[1]=='1'){
-	  							Set_Motor_Direction(1);
-	  							ForwardLeft(87);
+	  							Set_Motor_DirectionTest(0,1);
+	  							ForwardLeftTest(83);
 	  						}
 	  				else if(aRxBuffer[0]=='A'&&aRxBuffer[1]=='0'){
-	  							Set_Motor_Direction(0);
-	  							BackLeft(-87);
+	  							Set_Motor_DirectionTest(1,0);
+	  							BackLeftTest(-83);
 	  				}
 	  				else if(aRxBuffer[0]=='S' && distanceTraveled < Target_Distance)
 	  				{
