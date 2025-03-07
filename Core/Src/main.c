@@ -46,7 +46,7 @@ int tempflag=1;
 #define MAX_SERVO_Angle 180
 #define MIN_SERVO_Angle 0
 #define WHEEL_DIAMETER 6.5    // 6.5 cm
-int Target_Distance;  // in cm
+volatile int Target_Distance=0;  // in cm
 #define PI 3.14159265359
 #define DEG_TO_RAD (PI/ 180.0)
 float distanceTraveled = 0.0;  // Total distance traveled in cm
@@ -150,7 +150,7 @@ int angle;
 #define RECEIVE_BUFFER_SIZE 4
 #define Slight_Right 90
 #define Slight_Left 100
-#define Right 0
+#define Right 20
 #define Center 95
 #define Left 140
 /* USER CODE END PV */
@@ -222,7 +222,7 @@ void updateYaw()//update yaw reading using filter
 		  	  //magcal_adjust(&mag,&mag_params);
 
 		  	  //Madgwick Mahony
-	MadgwickQuaternionUpdate(accel.x*9.81f,accel.y*9.81f,accel.z*9.81f,
+	MahonyQuaternionUpdate(accel.x*9.81f,accel.y*9.81f,accel.z*9.81f,
 		  			  gyro.x*DEG_TO_RAD,-gyro.y*DEG_TO_RAD,gyro.z*DEG_TO_RAD,
 					  (HAL_GetTick()-prevtick)*0.001f,q);
 
@@ -245,21 +245,21 @@ void Backward(int target)
 	}
 	updateYaw();
 	//osDelay(10);
-	LMotorPID.setpoint=2;
-	RMotorPID.setpoint=2;
+	LMotorPID.setpoint=3;
+	RMotorPID.setpoint=3;
 
-	if (yaw > target - 0.5f )
+	if (yaw > target - 0.1f )
 			  {
 				  set_servo_angle(Slight_Left);
 			  }
-	else if(yaw < target + 0.5f)
+	else if(yaw < target + 0.1f)
 	{
 		set_servo_angle(Slight_Right);
 	}
-	if(Target_Distance- distanceTraveled <20&&Target_Distance >30)
+	if(Target_Distance- distanceTraveled <10)
 	{
-	  LMotorPID.setpoint=1;
-	  RMotorPID.setpoint=1;
+	  LMotorPID.setpoint=2.5;
+	  RMotorPID.setpoint=2.5;
 	}
 //	else if (yaw > target - 20.0f && yaw < target + 20.0f)
 //	{
@@ -290,18 +290,18 @@ void Forward(int target)
 	LMotorPID.setpoint=4;
 	RMotorPID.setpoint=4;
 
-	if (yaw > target - 0.5f )
+	if (yaw > target - 0.1f )
 	  {
 		  set_servo_angle(Slight_Right);
 	  }
-	else if(yaw < target + 0.5f)
+	else if(yaw < target + 0.1f)
 	{
 		set_servo_angle(Slight_Left);
 	}
-		if(Target_Distance- distanceTraveled <20&&Target_Distance >30)
+		if(Target_Distance- distanceTraveled <10)
 		{
-		  LMotorPID.setpoint=1;
-		  RMotorPID.setpoint=1;
+		  LMotorPID.setpoint=2.5;
+		  RMotorPID.setpoint=2.5;
 		}
 //	else if (yaw > target - 20.0f && yaw < target + 20.0f)
 //	{
@@ -313,7 +313,15 @@ void Forward(int target)
 	set_motor_pwm(L, R);
 
 }
-
+void Calibrate(void)
+{
+	set_servo_angle(Left);
+	osDelay(750);
+	set_servo_angle(Right);
+	osDelay(750);
+	set_servo_angle(Center);
+	osDelay(750);
+}
 //void ForwardLeft(int target)
 //{
 //	//Ensure yaw is reseted before turning
@@ -360,6 +368,14 @@ void BackRight(int target)
 	static uint8_t bTurn=1;
 	if(bTurn&& target != 0)
 	{
+		  distanceTraveled=0;
+		  Target_Distance=1;
+		  while(distanceTraveled < Target_Distance)
+		  {
+			  Set_Motor_Direction(0,0);
+			  Backward(0);
+		  }
+		  Motor_Stop();
 		set_servo_angle(Right);
 		osDelay(750);
 		resetYaw();
@@ -376,7 +392,15 @@ void BackRight(int target)
 				  PID_Reset(&LMotorPID);
 				  PID_Reset(&RMotorPID);
 				  set_servo_angle(Center);
-				  osDelay(750);
+				  osDelay(1000);
+				  distanceTraveled=0;
+				  Target_Distance=12;
+				  while(distanceTraveled < Target_Distance)
+				  {
+					  Set_Motor_Direction(0,0);
+					  Backward(0);
+				  }
+				  Motor_Stop();
 				  bTurn=1;
 				  flagDone=1;
 				  tempflag=0;
@@ -401,6 +425,14 @@ void BackLeft(int target)
 	static uint8_t bTurn=1;
 	if(bTurn&& target != 0)
 	{
+		  distanceTraveled=0;
+		  Target_Distance=2;
+		  while(distanceTraveled < Target_Distance)
+		  {
+			  Set_Motor_Direction(0,0);
+			  Backward(0);
+		  }
+		  Motor_Stop();
 		set_servo_angle(Left);
 		osDelay(750);
 		resetYaw();
@@ -418,16 +450,18 @@ void BackLeft(int target)
 				  PID_Reset(&RMotorPID);
 				  set_servo_angle(Center);
 				  osDelay(750);
-				  bTurn=1;
-				  flagDone=1;
-				  tempflag=0;
 				  distanceTraveled=0;
-				  while(distanceTraveled < 0.3)
+				  Target_Distance=12;
+				  while(distanceTraveled < Target_Distance)
 				  {
 					  Set_Motor_Direction(0,0);
 					  Backward(0);
 				  }
 				  Motor_Stop();
+				  bTurn=1;
+				  flagDone=1;
+				  tempflag=0;
+				  distanceTraveled=0;
 				  count++;
 				  return;
 			  }
@@ -449,6 +483,14 @@ void ForwardLeft(int target)
 	static uint8_t bTurn=1;
 	if(bTurn&& target != 0)
 	{
+		  distanceTraveled=0;
+		  Target_Distance=10;
+		  while(distanceTraveled < Target_Distance)
+		  {
+			  Set_Motor_Direction(1,1);
+			  Forward(0);
+		  }
+		  Motor_Stop();
 		set_servo_angle(Left);
 		osDelay(750);
 		resetYaw();
@@ -469,13 +511,7 @@ void ForwardLeft(int target)
 				  bTurn=1;
 				  flagDone=1;
 				  tempflag=0;
-				  distanceTraveled=0;
-				  while(distanceTraveled < 1)
-				  {
-					  Set_Motor_Direction(0,0);
-					  Backward(0);
-				  }
-				  Motor_Stop();
+				  //Calibrate();
 				  count++;
 				  return;
 			  }
@@ -497,6 +533,14 @@ void ForwardRight(int target)
 	static uint8_t bTurn=1;
 	if(bTurn&& target != 0)
 	{
+		  distanceTraveled=0;
+		  Target_Distance=10;
+		  while(distanceTraveled < Target_Distance)
+		  {
+			  Set_Motor_Direction(1,1);
+			  Forward(0);
+		  }
+		  Motor_Stop();
 		set_servo_angle(Right);
 		osDelay(750);
 		resetYaw();
@@ -517,13 +561,6 @@ void ForwardRight(int target)
 				  bTurn=1;
 				  flagDone=1;
 				  tempflag=0;
-				  distanceTraveled=0;
-				  while(distanceTraveled < 1)
-				  {
-					  Set_Motor_Direction(0,0);
-					  Backward(0);
-				  }
-				  Motor_Stop();
 				  count++;
 				  return;
 			  }
@@ -1533,6 +1570,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef * huart)
 	//HAL_UART_Transmit(&huart3,(uint8_t *)aRxBuffer,4,0xFFFF);
 	 if(flagReceived !=1){
 			flagReceived=1;
+			distanceTraveled=0;
 			 HAL_UART_Receive_IT(&huart3,(uint8_t *)aRxBuffer,RECEIVE_BUFFER_SIZE);
 	 }
 	 else{
@@ -1595,7 +1633,6 @@ void Motor_Stop()
 	resetYaw();
 	  PID_Reset(&LMotorPID);
 	  PID_Reset(&RMotorPID);
-	degree=0;
 	distanceTraveled=0;
     pwmValL = 0;
     pwmValR = 0;
@@ -1660,7 +1697,7 @@ void StartOledTask(void *argument)
 		  OLED_Refresh_Gram();
 		  snprintf(text, sizeof(text), "Distance: %d m", Target_Distance);
 		  OLED_ShowString(10, 10, text);
-		  snprintf(text, sizeof(text), "DistanceIRL: %d m", iDistanceL);
+		  snprintf(text, sizeof(text), "DistanceT %.2f m", distanceTraveled);
 		  OLED_ShowString(10, 50, text);
 		  snprintf(temp,sizeof(temp),"%.5f\r\n",yaw);
 
@@ -1754,7 +1791,7 @@ void StartEncoderTask(void *argument)
 	  cnt1R = __HAL_TIM_GET_COUNTER(&htim3);
 	 tick = HAL_GetTick();
   }
-	  osDelay(150);
+	  osDelay(50);
   }
   /* USER CODE END StartEncoderTask */
 }
@@ -1776,14 +1813,13 @@ void startrobotTask(void *argument)
 	HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_2);
 
 	while(HAL_GPIO_ReadPin(GPIOD, GPIO_PIN_8)==1);
-	int labTarget=83;
+	int labTarget=87;
 
 		//{osDelay(200);osThreadYield();}
-	//while(calibrate==0);
+	//
 
 	set_servo_angle(Center);
 	osDelay(200);
-	//Calibrate();
 	start_time = HAL_GetTick();
 	end_time = HAL_GetTick();  // Record end time
 	delta_time_sec= (end_time - start_time) * 0.001f; // Time difference in ms
@@ -1791,22 +1827,46 @@ void startrobotTask(void *argument)
   {
 
 	  //TEST TURN SEGMENT
-	  {
-
+//	  {
+//
 		  if(HAL_GPIO_ReadPin(GPIOD, GPIO_PIN_8)==0)
 		  {
 			  //resetYaw();
 			  //yaw=0;
 			  tempflag=1;
+			 // distanceTraveled=0;
 
 			  //target=85;
 			  //set_servo_angle(Right);
-			  //Target_Distance=50;
-			 // osDelay(550);
+			  //osDelay(550);
 		  }
-
+//////
 		  if(tempflag==1)
 			  {
+			  if(count==0)
+			  {
+				  flagReceived=1;
+				  aRxBuffer[0]='D';
+				  aRxBuffer[1]='1';
+				  aRxBuffer[2]='0';
+				  aRxBuffer[3]='0';
+			  }
+			  else if (count==1)
+			  {
+				  flagReceived=1;
+				  aRxBuffer[0]='D';
+				  aRxBuffer[1]='0';
+				  aRxBuffer[2]='0';
+				  aRxBuffer[3]='0';
+			  }
+			  else{
+				  count=0;
+			  }
+			  }
+
+
+
+
 //				Set_Motor_DirectionTest(0,0);
 //				BackLeftTest(-83);
 //				  if(distanceTraveled < 180)
@@ -1828,31 +1888,31 @@ void startrobotTask(void *argument)
 //				  }
 //			  while(1)
 //			  {
-			  while(1)
-			  {
-			  	if(count==0)
-			  	{
-					Set_Motor_Direction(1,1);
-	//				BackRightTest(83);
-					ForwardLeft(83);
-			  	}
-			  	else if(count== 1){
-			  		Set_Motor_Direction(0,0);
-			  		BackLeft(-83);
-			  	}
-			  	else if(count==2){
-			  		Set_Motor_Direction(1,1);
-			  		ForwardRight(-83);
-			  	}
-			  	else if(count==3){
-			  		Set_Motor_Direction(0,0);
-			  		BackRight(83);
-			  	}
-			  	else{
-			  		count=0;
-			  	}
-			  }
-//			  	else if(count ==2 && distanceTraveled<Target_Distance){
+//			  while(1)
+//			  {
+//			  	if(count==0)
+//			  	{
+//					Set_Motor_Direction(1,1);
+//	//				BackRightTest(83);
+//					ForwardLeft(83);
+//			  	}
+//			  	else if(count== 1){
+//			  		Set_Motor_Direction(0,0);
+//			  		BackLeft(-83);
+//			  	}
+//			  	else if(count==2){
+//			  		Set_Motor_Direction(1,1);
+//			  		ForwardRight(-83);
+//			  	}
+//			  	else if(count==3){
+//			  		Set_Motor_Direction(0,0);
+//			  		BackRight(83);
+//			  	}
+//			  	else{
+//			  		count=0;
+//			  	}
+//			  }
+////			  	else if(count ==2 && distanceTraveled<Target_Distance){
 //			  		if(distanceTraveled>=Target_Distance)
 //			  		{
 //			  			count++;
@@ -1873,31 +1933,8 @@ void startrobotTask(void *argument)
 //			  			  Set_Motor_DirectionTest(1,0);
 //			  			  ForwardRightTest(-83);
 			  				//ForwardRight(-84);
-			  //int target=-25;
-			  //ForwardRight(-target);
-			  //BackRight(85);
-			  /*if (yaw > target - 2.0f && yaw < target + 2.0f)
-			  {
-				  set_motor_pwm(0, 0);
-				  PID_Reset(&LMotorPID);
-				  PID_Reset(&RMotorPID);
-				  set_servo_angle(Center);
-				  target = 85;
-				  tempflag=0;count++;
-			  }*/
 
-			  	  }/*else
-				  {
-			  		set_motor_pwm(0, 0);
-				  PID_Reset(&LMotorPID);
-				  PID_Reset(&RMotorPID);
-				  set_servo_angle(Center);
-				  target = 0;
-
-			  		  osDelay(200);
-				  }*/
-
-	  }
+//	  }
 	  //END OF TEST SEGMENT
 	  	  	ICM20948_readGyroscope_all(&hi2c1, 0, GYRO_SENS, &accel);
 	  		end_time = HAL_GetTick();
@@ -1912,17 +1949,17 @@ void startrobotTask(void *argument)
 	  					Forward(0);
 	  				}
 	  				else if(aRxBuffer[0]=='D'&&aRxBuffer[1]=='1'){
-	  							Set_Motor_Direction(1,0);
+	  							Set_Motor_Direction(1,1);
 	  							ForwardRight(-labTarget);
 	  				}
+	  				else if(aRxBuffer[0]=='A' &&aRxBuffer[1]=='1'){
+	  							Set_Motor_Direction(1,1);
+	  							ForwardLeft(labTarget);
+	  						}
 	  				else if(aRxBuffer[0]=='D'&&aRxBuffer[1]=='0'){
 	  							Set_Motor_Direction(0,0);
 	  							BackRight(labTarget);
 	  				}
-	  				else if(aRxBuffer[0]=='A' &&aRxBuffer[1]=='1'){
-	  							Set_Motor_Direction(0,1);
-	  							ForwardLeft(labTarget);
-	  						}
 	  				else if(aRxBuffer[0]=='A'&&aRxBuffer[1]=='0'){
 	  							Set_Motor_Direction(0,0);
 	  							BackLeft(-labTarget);
