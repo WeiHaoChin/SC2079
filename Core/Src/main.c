@@ -54,7 +54,7 @@ float delta_time_sec=0;
 float gyro_offset = 0.0;
 float current_gyro_reading = 0.0;
 int calibrate,flagDone=0,flagReceived=0;
-int count=0;
+int count=0,adjustment;
 uint32_t start_time, end_time;
 
 //#define Debug
@@ -247,7 +247,6 @@ void Backward(int target)
 	//osDelay(10);
 	LMotorPID.setpoint=3;
 	RMotorPID.setpoint=3;
-
 	if (yaw > target - 0.1f )
 	{
 		set_servo_angle(Slight_Left);
@@ -1744,6 +1743,10 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef * huart)
 	if(flagReceived !=1){
 		flagReceived=1;
 		distanceTraveled=0;
+		char temp[4] = {0};  // Temporary buffer to hold up to 4 characters + null terminator
+		strncpy(temp, aRxBuffer+1, 3);
+		Target_Distance=atoi(temp);
+		adjustment=g_distanceUS-Target_Distance;
 		HAL_UART_Receive_IT(&huart3,(uint8_t *)aRxBuffer,RECEIVE_BUFFER_SIZE);
 	}
 	else{
@@ -1868,9 +1871,9 @@ void StartOledTask(void *argument)
 		snprintf(text, sizeof(text), "degree :%5.2f", yaw);//BEFORE DEGREE
 		OLED_ShowString(10, 30, text);
 		OLED_Refresh_Gram();
-		snprintf(text, sizeof(text), "Distance: %d m", Target_Distance);
+		snprintf(text, sizeof(text), "Distance: %d m", adjustment);
 		OLED_ShowString(10, 10, text);
-		snprintf(text, sizeof(text), "DistanceT %d m", count);
+		snprintf(text, sizeof(text), "DistanceT %d m", flagDone);
 		OLED_ShowString(10, 50, text);
 		snprintf(temp,sizeof(temp),"%.5f\r\n",yaw);
 
@@ -2016,28 +2019,25 @@ void startrobotTask(void *argument)
 		//////
 		if(tempflag==1)
 		{
-			//Task2();
-			//			  if(count==0)
-			//			  {
-			//				  flagReceived=1;
-			//				  aRxBuffer[0]='D';
-			//				  aRxBuffer[1]='1';
-			//				  aRxBuffer[2]='0';
-			//				  aRxBuffer[3]='0';
-			//			  }
-			//			  else if (count==1)
-			//			  {
-			////				  Set_Motor_Direction(1,1);
-			////				  ForwardRight(-83);
-			//				  flagReceived=1;
-			//				  aRxBuffer[0]='D';
-			//				  aRxBuffer[1]='0';
-			//				  aRxBuffer[2]='0';
-			//				  aRxBuffer[3]='0';
-			//			  }
-			//			  else{
-			//				  count=0;
-			//			  }
+//			if(count==0)
+//			{
+//								  flagReceived=1;
+//								  aRxBuffer[0]='D';
+//								  aRxBuffer[1]='1';
+//								  aRxBuffer[2]='0';
+//								  aRxBuffer[3]='0';
+//			}
+//						  else if (count==1)
+//						  {
+//							  flagReceived=1;
+//							  aRxBuffer[0]='D';
+//							  aRxBuffer[1]='0';
+//							  aRxBuffer[2]='0';
+//							  aRxBuffer[3]='0';
+//						  }
+//						  else{
+//							  count=0;
+//						  }
 		}
 
 
@@ -2144,6 +2144,23 @@ void startrobotTask(void *argument)
 			{
 				Set_Motor_Direction(0,0);
 				Backward(0);
+			}
+			else if(aRxBuffer[0]=='R' &&g_distanceUS<60)
+			{
+
+				    if( -(adjustment) > distanceTraveled && adjustment < 0)
+				    {
+				    	Set_Motor_Direction(0,0);
+				       Backward(0);
+				    }
+				    else if(adjustment > distanceTraveled && adjustment > 0)
+				    {
+				    	Set_Motor_Direction(1,1);
+				       Forward(0);
+				    }
+				    else{
+				    	flagDone=1;
+				    }
 			}
 			else{
 				flagDone=1;
