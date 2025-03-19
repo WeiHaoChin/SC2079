@@ -79,6 +79,9 @@ void Error_Handler(void);
 #define TRIG_GPIO_Port GPIOE
 #define LED3_Pin GPIO_PIN_10
 #define LED3_GPIO_Port GPIOE
+#define SWITCH_Pin GPIO_PIN_0
+#define SWITCH_GPIO_Port GPIOE
+#define SWITCH_EXTI_IRQn EXTI0_IRQn
 
 /* USER CODE BEGIN Private defines */
 #define ENCODER_PULSES_PER_REVOLUTION 330
