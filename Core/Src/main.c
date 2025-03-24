@@ -55,7 +55,7 @@ float delta_time_sec=0;
 float gyro_offset = 0.0;
 float current_gyro_reading = 0.0;
 int calibrate,flagDone=0,flagReceived=0;
-int count=0,reverse,adjustment=0;
+int count=0,reverse,adjustment=2;
 // ir sensor
 uint16_t iDistanceL = 0;
 uint16_t iDistanceR = 0;
@@ -755,8 +755,9 @@ void FRight(int target)
 	}while(!(yaw > target - 2.0f && yaw < target + 2.0f));
 	Motor_Stop();
 }
-void FIR(int target,int IR)
+void BIR(int target,int IR)
 {
+	Set_Motor_Direction(0,0);
 	distanceTraveled=0;
 	int pass=0,IRUsed;
 	uint8_t bTurn=1;
@@ -795,15 +796,104 @@ void FIR(int target,int IR)
 
 		set_motor_pwm(L, R);
 		osDelay(10);
+	}while(IRUsed>target);
+	Motor_Stop();
+	Set_Motor_Direction(1,1);
+}
+void FIR2(int target,int IR)
+{
+	distanceTraveled=0;
+	int pass=0,IRUsed;
+	uint8_t bTurn=1;
+	int32_t L=0,R=0;
+	do
+	{
+		if(IR==0)
+		{
+			IRUsed=iDistanceL;
+		}
+		else if(IR==1){
+			IRUsed=iDistanceR;
+		}
+		if(bTurn)
+		{
+			set_servo_angle(Center);
+			bTurn=0;
+			osDelay(250);
+			resetYaw();
+		}
+		updateYaw();
+		//osDelay(10);
+		LMotorPID.setpoint=3;
+		RMotorPID.setpoint=3;
+		if(yaw > -0.1f)
+		{
+			set_servo_angle(Slight_Right);
+		}
+		else if(yaw < 0.1f)
+		{
+			set_servo_angle(Slight_Left);
+		}
+
+		L=(int32_t)PID_Update(&LMotorPID, RPS_L);
+		R=(int32_t)PID_Update(&RMotorPID, RPS_R);
+
+		set_motor_pwm(L, R);
+		osDelay(10);
 	}while(IRUsed<target);
-	if(distanceTraveled<60){
-		reverse=15;
+	//reverse=distanceTraveled-40;//-50;
+	if(distanceTraveled<50){
+		reverse=(distanceTraveled+10)/2;
 		adjustment=0;
 	}
-	else if(distanceTraveled>60){
-		reverse=distanceTraveled/2;
+	else if(distanceTraveled>70){
+		reverse=(distanceTraveled)/2;
 		adjustment=1;
 	}
+	Motor_Stop();
+}
+
+void FIR(int target,int IR)
+{
+	distanceTraveled=0;
+	int pass=0,IRUsed;
+	uint8_t bTurn=1;
+	int32_t L=0,R=0;
+	do
+	{
+		if(IR==0)
+		{
+			IRUsed=iDistanceL;
+		}
+		else if(IR==1){
+			IRUsed=iDistanceR;
+		}
+		if(bTurn)
+		{
+			set_servo_angle(Center);
+			bTurn=0;
+			osDelay(250);
+			resetYaw();
+		}
+		updateYaw();
+		//osDelay(10);
+		LMotorPID.setpoint=3;
+		RMotorPID.setpoint=3;
+		if(yaw > -0.1f)
+		{
+			set_servo_angle(Slight_Right);
+		}
+		else if(yaw < 0.1f)
+		{
+			set_servo_angle(Slight_Left);
+		}
+
+		L=(int32_t)PID_Update(&LMotorPID, RPS_L);
+		R=(int32_t)PID_Update(&RMotorPID, RPS_R);
+
+		set_motor_pwm(L, R);
+		osDelay(10);
+	}while(IRUsed<target);
 	Motor_Stop();
 }
 //Forward til Ultra sonic reach target
@@ -824,8 +914,8 @@ void F(int target)
 		}
 		updateYaw();
 		//osDelay(10);
-		LMotorPID.setpoint=4;
-		RMotorPID.setpoint=4;
+		LMotorPID.setpoint=3.5;
+		RMotorPID.setpoint=3.5;
 		if(yaw > -0.1f)
 		{
 			set_servo_angle(Slight_Right);
@@ -1071,7 +1161,7 @@ State_t fsm[9] = {
 	{SecondDir,  {MoveLeft2, MoveRight2}}, // Wait2ndDir
     {GoLeft2, {MoveTo3, MoveTo3}},  // MoveLeft2
     {GoRight2, {MoveTo3, MoveTo3}},  // MoveRight2
-	{GoBackHome, {NULL, NULL}},  //
+	{GoBackHome, {NULL, NULL}},  // MoveTo3
 
 //    {moveTo2Function,	30,    {MoveLeft2, MoveRight2}},  // MoveTo2
 //    {moveLeft2Function,	30,  {MoveTo3, MoveLeft2}},     // MoveLeft2
@@ -1140,6 +1230,7 @@ void GoLeft()
 {
 	FLeft(41.5);
 	osDelay(100);
+	HAL_UART_Transmit(&huart3,(uint8_t *)"LOL\r\n",5,0xFFFF);//Pascal stream
 	FRight(-90);
 	osDelay(100);
 	BackDistance(5);
@@ -1152,6 +1243,7 @@ void GoRight()
 {
 	FRight(-41.5);
 	osDelay(100);
+	HAL_UART_Transmit(&huart3,(uint8_t *)"LOL\r\n",5,0xFFFF);//Pascal stream
 	FLeft(90);
 	osDelay(100);
 	BackDistance(10);
@@ -1164,69 +1256,106 @@ void GoRight()
 //Do your adjustment to 2nd Obstacle if necessary
 void MoveTo2nd()
 {
+
 	osDelay(100);
+	memset(aRxBuffer,"0",sizeof(aRxBuffer));//reset for next direction
 	count=g_distanceUS+40;
 	if(g_distanceUS<30)
 	{
 		B(30);
-		count=count+30;
+		count=count+35;
 	}
-	else if(g_distanceUS>30){
+	else if(g_distanceUS>=30){
 		F(40);
-		count=count+40;
+		count=count+35;
 	}
 	HAL_UART_Transmit(&huart3,(uint8_t *)"ACK\r\n",5,0xFFFF);
-	memset(aRxBuffer,"0",sizeof(aRxBuffer));
+	osDelay(10);
 	CurrentState=CurrentState->next[Duncare];//change to waiting dir2
 	}
 
 void GoLeft2()
 {
 	FLeft(84);
+	BIR(400,1);
 	FIR(400,1);
-	FR(-166);
-	ForwardDistance(10);
-	FIR(400,1); //0 for Left 1 for Right
+	BIR(400,1);
+	FIR(400,1);
+	FR(-161);
+	osDelay(100);
+	//ForwardDistance(10);
+	FIR2(400,1); //0 for Left 1 for Right
+	BIR(400,1);
+	FIR(400,1);
+	osDelay(100);
 	FRight(-80);
-	ForwardDistance(count);
+	ForwardDistance(count-10);// coming back after a turn
 	//FIR(600,1);
 	FRight(-80);
-	if(adjustment){
-		reverse=reverse-45;
+	osDelay(100);
+//	if(reverse>0){
+//		ForwardDistance(reverse);
+//	}
+//	else{
+//		BackDistance(-(reverse));
+//	}
+	if(adjustment==1){
+		reverse=reverse-35;
 		ForwardDistance(reverse);
 	}
-	else{
+	else if(adjustment==0){
 		BackDistance(reverse);
 	}
-	FLeft(80);
+	else if(adjustment==2){
+		ForwardDistance(10);
+	}
+	osDelay(150);
+	FLeft(81);
 	CurrentState=CurrentState->next[Duncare];//change to waiting dir2
 	}
 
 void GoRight2()
 {
 	FRight(-84);
+	BIR(400,0);
 	FIR(400,0);
+	BIR(400,0);
+	FIR(400,0);
+	osDelay(100);
 	FL(161);
-	ForwardDistance(10);
-	FIR(400,0); //0 for Left 1 for Right
+	osDelay(100);
+	//ForwardDistance(10);
+	FIR2(400,0); //0 for Left 1 for Right
+	BIR(400,0);
+	FIR(400,0);
 	FLeft(80);
 	ForwardDistance(count);
 	//FIR(600,1);
 	FLeft(80);
-	if(adjustment){
-		reverse=reverse-45;
+	osDelay(100);
+//	if(reverse>0){
+//		ForwardDistance(reverse);
+//	}
+//	else{
+//		BackDistance(-(reverse));
+//	}
+	if(adjustment==1){
+		reverse=reverse-30;
 		ForwardDistance(reverse);
 	}
-	else{
+	else if(adjustment==0){
 		BackDistance(reverse);
 	}
-
+	else if(adjustment==2){
+		ForwardDistance(10);
+	}
+	osDelay(150);
 	FRight(-80);
 	CurrentState=CurrentState->next[Duncare];//change to waiting dir2
 	}
 void GoBackHome()
 {
-	F(30);
+	F(20);
 	CurrentState=CurrentState->next[Duncare];//change to waiting dir2
 	}
 void Task2()
@@ -2291,7 +2420,7 @@ void StartOledTask(void *argument)
 	/* Infinite loop */
 	for(;;)
 	{
-		snprintf(text, sizeof(text), "DistanceR:%d", reverse);
+		snprintf(text, sizeof(text), "DistanceU:%.2f",  g_distanceUS);
 		OLED_ShowString(10, 20, text);
 		snprintf(text, sizeof(text), "degree :%5.2f", yaw);//BEFORE DEGREE
 		OLED_ShowString(10, 30, text);
