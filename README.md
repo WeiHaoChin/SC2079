@@ -24,3 +24,6 @@ Utilizes a combination of the following components to perform required tasks and
 ## Encoder → Distance measurement and PID control <br />
 **330 Encoder pulses per revolution**<br />
 **Wheel Diameter 6.5cm**<br />
+
+# Task 2
+Full hardcoded on stm side using state machine, rpi only does image rec and send direction to stm e.g. Axxx or Dxxx <br />
